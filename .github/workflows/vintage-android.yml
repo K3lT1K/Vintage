@@ -12,6 +12,7 @@ jobs:
     defaults:
       run:
         working-directory: forge
+        shell: bash
     steps:
       - uses: actions/checkout@v4
         with:
@@ -27,6 +28,7 @@ jobs:
           git apply --check ../project/vintage-solo.patch
           git apply ../project/vintage-solo.patch
           if [ -d ../project/fixes ]; then cp -a ../project/fixes/. .; fi
+          python3 ../project/build_fixes.py
           git ls-files --cached --others --exclude-standard -z | tar --null -T - -czf ../vintage-solo-source.tar.gz
       - name: Save complete build sources
         uses: actions/upload-artifact@v4
