@@ -1,0 +1,22 @@
+2026-09-08T15:06:42.6500005Z 09-08 15:06:37.490  2950  2950 E AndroidRuntime: FATAL EXCEPTION: main
+2026-09-08T15:06:42.6500171Z 09-08 15:06:37.490  2950  2950 E AndroidRuntime: Process: forge.vintage.solo, PID: 2950
+2026-09-08T15:06:42.6500785Z 09-08 15:06:37.490  2950  2950 E AndroidRuntime: java.lang.RuntimeException: Unable to resume activity {forge.vintage.solo/forge.app.Main}: android.util.SuperNotCalledException: Activity {forge.vintage.solo/forge.app.Main} did not call through to super.onResume()
+2026-09-08T15:06:42.6501064Z 09-08 15:06:37.490  2950  2950 E AndroidRuntime: 	at android.app.ActivityThread.performResumeActivity(ActivityThread.java:5615)
+2026-09-08T15:06:42.6501332Z 09-08 15:06:37.490  2950  2950 E AndroidRuntime: 	at android.app.ActivityThread.handleResumeActivity(ActivityThread.java:5648)
+2026-09-08T15:06:42.6501618Z 09-08 15:06:37.490  2950  2950 E AndroidRuntime: 	at android.app.servertransaction.ResumeActivityItem.execute(ResumeActivityItem.java:73)
+2026-09-08T15:06:42.6501948Z 09-08 15:06:37.490  2950  2950 E AndroidRuntime: 	at android.app.servertransaction.ActivityTransactionItem.execute(ActivityTransactionItem.java:63)
+2026-09-08T15:06:42.6502298Z 09-08 15:06:37.490  2950  2950 E AndroidRuntime: 	at android.app.servertransaction.TransactionExecutor.executeLifecycleItem(TransactionExecutor.java:169)
+2026-09-08T15:06:42.6502647Z 09-08 15:06:37.490  2950  2950 E AndroidRuntime: 	at android.app.servertransaction.TransactionExecutor.executeTransactionItems(TransactionExecutor.java:101)
+2026-09-08T15:06:42.6502951Z 09-08 15:06:37.490  2950  2950 E AndroidRuntime: 	at android.app.servertransaction.TransactionExecutor.execute(TransactionExecutor.java:80)
+2026-09-08T15:06:42.6503175Z 09-08 15:06:37.490  2950  2950 E AndroidRuntime: 	at android.app.ActivityThread$H.handleMessage(ActivityThread.java:2823)
+2026-09-08T15:06:42.6503387Z 09-08 15:06:37.490  2950  2950 E AndroidRuntime: 	at android.os.Handler.dispatchMessage(Handler.java:110)
+2026-09-08T15:06:42.6503571Z 09-08 15:06:37.490  2950  2950 E AndroidRuntime: 	at android.os.Looper.loopOnce(Looper.java:248)
+2026-09-08T15:06:42.6504071Z 09-08 15:06:37.490  2950  2950 E AndroidRuntime: 	at android.os.Looper.loop(Looper.java:338)
+2026-09-08T15:06:42.6504316Z 09-08 15:06:37.490  2950  2950 E AndroidRuntime: 	at android.app.ActivityThread.main(ActivityThread.java:9067)
+2026-09-08T15:06:42.6504496Z 09-08 15:06:37.490  2950  2950 E AndroidRuntime: 	at java.lang.reflect.Method.invoke(Native Method)
+2026-09-08T15:06:42.6504819Z 09-08 15:06:37.490  2950  2950 E AndroidRuntime: 	at com.android.internal.os.RuntimeInit$MethodAndArgsCaller.run(RuntimeInit.java:593)
+2026-09-08T15:06:42.6505037Z 09-08 15:06:37.490  2950  2950 E AndroidRuntime: 	at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:932)
+2026-09-08T15:06:42.6505410Z 09-08 15:06:37.490  2950  2950 E AndroidRuntime: Caused by: android.util.SuperNotCalledException: Activity {forge.vintage.solo/forge.app.Main} did not call through to super.onResume()
+2026-09-08T15:06:42.6505613Z 09-08 15:06:37.490  2950  2950 E AndroidRuntime: 	at android.app.Activity.performResume(Activity.java:9321)
+2026-09-08T15:06:42.6505946Z 09-08 15:06:37.490  2950  2950 E AndroidRuntime: 	at android.app.ActivityThread.performResumeActivity(ActivityThread.java:5605)
+2026-09-08T15:06:42.6506053Z 09-08 15:06:37.490  2950  2950 E AndroidRuntime: 	... 14 more

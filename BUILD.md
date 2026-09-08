@@ -1,5 +1,7 @@
 # Сборка и проверка Vintage Solo
 
+> Первая сборка падает при запуске на Android 16 (подтверждено на эмуляторе и сообщено пользователем на OnePlus 13 / OxygenOS 16). Не используйте её как рабочую версию. Исправление d939a30 проходит сборку и проверку: https://github.com/K3lT1K/Vintage/actions/runs/34242705450
+
 ## Скачать и установить
 
 1. Войдите в GitHub и откройте [пакет APK](https://github.com/K3lT1K/Vintage/actions/runs/34211369106/artifacts/10050272318).
@@ -37,6 +39,7 @@ cd forge
 git checkout ce5b0dbf17733847929e990c77274893223e1fa6
 git apply --check ../project/vintage-solo.patch
 git apply ../project/vintage-solo.patch
+cp -a ../project/fixes/. .
 python3 ../project/build_fixes.py
 # После ознакомления и согласия с условиями Android SDK:
 ACCEPT_ANDROID_SDK_LICENSES=yes bash tools/vintage-solo/bootstrap.sh
