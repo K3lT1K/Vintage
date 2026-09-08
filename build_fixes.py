@@ -24,3 +24,11 @@ old = "        final HWInfo vintageHardware = new HWInfo(device, os, getChipset)
 assert text.count(old) == 1, "Expected original asynchronous Main bootstrap"
 text = text.replace(old, "        initForge(Gadapter, new HWInfo(device, os, getChipset), permissiongranted, isTabletDevice(getContext()));\n")
 p.write_text(text)
+
+# Fixed screen uses Russian labels even when Forge defaults to en-US.
+p = Path("forge-gui-mobile/src/forge/assets/FSkinFont.java")
+text = p.read_text()
+old = 'characters.append("•").append("—");'
+new = 'characters.append("•").append("—").append("АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯабвгдеёжзийклмнопрстуфхцчшщъыьэюя");'
+assert text.count(old) == 1, "Expected font character set initialization"
+p.write_text(text.replace(old, new))
