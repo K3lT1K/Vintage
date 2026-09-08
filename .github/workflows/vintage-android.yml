@@ -1,0 +1,71 @@
+name: Vintage Solo APK
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, codex/vintage-apk]
+permissions:
+  contents: read
+jobs:
+  apk:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    defaults:
+      run:
+        working-directory: forge
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: project
+      - name: Checkout exact Forge base
+        uses: actions/checkout@v4
+        with:
+          repository: Card-Forge/forge
+          ref: ce5b0dbf17733847929e990c77274893223e1fa6
+          path: forge
+      - name: Restore saved source changes
+        run: |
+          git apply --check ../project/vintage-solo.patch
+          git apply ../project/vintage-solo.patch
+          if [ -d ../project/fixes ]; then cp -a ../project/fixes/. .; fi
+          git ls-files --cached --others --exclude-standard -z | tar --null -T - -czf ../vintage-solo-source.tar.gz
+      - name: Save complete build sources
+        uses: actions/upload-artifact@v4
+        with:
+          name: vintage-solo-source
+          path: vintage-solo-source.tar.gz
+          compression-level: 0
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Install local pinned tools
+        env:
+          ACCEPT_ANDROID_SDK_LICENSES: 'yes'
+          ANDROID_SDK_ROOT: ${{ runner.temp }}/vintage-sdk
+        run: |
+          mkdir -p tools/vintage-solo/reports
+          bash tools/vintage-solo/bootstrap.sh 2>&1 | tee tools/vintage-solo/reports/bootstrap.log
+      - name: Build with offline resources
+        run: |
+          source .vintage-tools/env.sh
+          command -v Xvfb
+          xvfb-run -a bash tools/vintage-solo/build.sh 2>&1 | tee tools/vintage-solo/reports/build.log
+      - name: Verify signed APK and offline resources
+        run: |
+          source .vintage-tools/env.sh
+          python3 tools/vintage-solo/check_apk.py
+      - name: Upload verified APK only
+        uses: actions/upload-artifact@v4
+        with:
+          name: vintage-solo-apk
+          if-no-files-found: error
+          path: forge/dist/vintage-solo/
+          compression-level: 0
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vintage-solo-diagnostics
+          path: |
+            forge/tools/vintage-solo/reports/**
+            forge/HANDOFF.md

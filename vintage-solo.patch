@@ -1,0 +1,3549 @@
+diff --git a/.github/workflows/vintage-android.yml b/.github/workflows/vintage-android.yml
+new file mode 100644
+index 00000000..ff5cc5e2
+--- /dev/null
++++ b/.github/workflows/vintage-android.yml
+@@ -0,0 +1,48 @@
++name: Vintage Solo APK
++on:
++  workflow_dispatch:
++  push:
++    branches: ['codex/vintage-apk']
++permissions:
++  contents: read
++jobs:
++  apk:
++    runs-on: ubuntu-24.04
++    timeout-minutes: 90
++    steps:
++      - uses: actions/checkout@v4
++      - uses: actions/setup-java@v4
++        with:
++          distribution: temurin
++          java-version: '17'
++      - name: Install local pinned tools
++        env:
++          ACCEPT_ANDROID_SDK_LICENSES: 'yes'
++          ANDROID_SDK_ROOT: ${{ runner.temp }}/vintage-sdk
++        run: |
++          mkdir -p tools/vintage-solo/reports
++          bash tools/vintage-solo/bootstrap.sh 2>&1 | tee tools/vintage-solo/reports/bootstrap.log
++      - name: Build with offline resources
++        run: |
++          source .vintage-tools/env.sh
++          command -v Xvfb
++          xvfb-run -a bash tools/vintage-solo/build.sh 2>&1 | tee tools/vintage-solo/reports/build.log
++      - name: Verify signed APK and offline resources
++        run: |
++          source .vintage-tools/env.sh
++          python3 tools/vintage-solo/check_apk.py
++      - name: Upload verified APK only
++        uses: actions/upload-artifact@v4
++        with:
++          name: vintage-solo-apk
++          if-no-files-found: error
++          path: dist/vintage-solo/
++      - name: Upload diagnostics
++        if: always()
++        uses: actions/upload-artifact@v4
++        with:
++          name: vintage-solo-diagnostics
++          if-no-files-found: warn
++          path: |
++            tools/vintage-solo/reports/**
++            HANDOFF.md
+diff --git a/.gitignore b/.gitignore
+index e6f372e7..e5efd04b 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -103,3 +103,14 @@ __pycache__
+ # EDHREC commander matrix tool intermediates
+ forge-gui/tools/build
+ forge-gui-ios/robovm.properties
++
++# Generated offline APK payload
++forge-gui-android/assets/vintage-res.zip
++forge-gui-android/assets/vintage-res.version
++
++.vintage-tools/
++tools/vintage-solo/.classes/
++
++forge-gui-android/assets/.vintage-res.zip.*
++
++dist/vintage-solo/
+diff --git a/HANDOFF.md b/HANDOFF.md
+new file mode 100644
+index 00000000..95768df7
+--- /dev/null
++++ b/HANDOFF.md
+@@ -0,0 +1,149 @@
++# Vintage Solo Android — HANDOFF
++
++Обновлено 2026-09-08. Сохранённая база Forge продолжена, повторного клонирования
++или переписывания движка нет. **Есть реальные изменения игры; APK не собран,
++полная компиляция и запуск не проверены. Это не готовая игра.**
++
++База: https://github.com/Card-Forge/forge, commit
++`ce5b0dbf17733847929e990c77274893223e1fa6` (Fix compile).
++Лицензия GPL-3.0 сохранена. Исходный коммит также записан в UPSTREAM_COMMIT.txt.
++
++## Реализовано в вызываемом коде
++
++- `VintageSoloScreen` открывается из `Forge.openHomeDefault`; выбор игроком и
++  ботом любых из Initiative / Workshop Aggro / Oath, включая зеркала.
++- Три настоящих main deck по 60 карт в `forge-gui/res/vintage-solo/`, без
++  сайдборда. Источники и дата в SOURCES.md, отдельный скрипт проверки карт.
++- Экран валидирует колоды через Forge и запускает обычный HostedMatch.
++  Один game, ante/cheat shuffle/filtered hands/AI sideboarding выключены.
++  Основное меню ограничено этим режимом, внутренние карты/режимы не удалены.
++- `VintageSolo` помечает профиль в Deck.aiHints. `PlayerControllerAi` вызывает
++  профильный mulligan и bottom; `AiController` вызывает выбор земли, сортировку
++  действий, поиск и выбор цели Swords; `CounterAi` — приоритет ключевых угроз.
++- `OpeningHandPlanner`: ограниченный перебор вариантов London bottom до 10 карт.
++  `VintageStrategy`: отдельные ветви профилей, приоритеты маны/налогов/движка,
++  поправки матчапов, повторная оценка текущего поля и стека при каждом вызове.
++  `VintageRemoval`: узкая корректировка цели Swords вне боевого стека.
++  Не подходящие правила возвращают управление штатному ИИ; платежи остаются Forge.
++- Причины пишутся в GameLog с `[Vintage AI]`, доступный и копируемый после партии.
++- Android: отдельный package `forge.vintage.solo`, landscape, свой тёмный стол,
++  экран выбора для пальца, переключатели текстовых карт и автопередачи приоритета,
++  убраны задержки фаз/разрешения. Остальное управление боя/зон/стека — мобильный Forge.
++- `VintageResources` устанавливает вложенные ресурсы до загрузки скина вне
++  Android UI-потока, в app-private storage; успешная версия отмечается маркером.
++  `AssetsDownloader` пропускает обновления для такого пакета. Сборщик ZIP
++  сохраняет все внутренние карточные скрипты и ресурсы, без извлечения Arena assets.
++  Изменённые API чтения файлов совместимы с minSdk 26. Фактический офлайн-запуск
++  ещё не проверен. В manifest отключён upstream Sentry DSN.
++- `VintageBenchmark`, вызываемый CLI Main, и Python runner для настоящих партий
++  Forge. Обмен первым игроком, baseline/specialist, фиксированный seed; один
++  процесс на game, ERROR/TIMEOUT отдельно от ничьих. Стенд пока не запускался.
++- Готовый ручной workflow `.github/workflows/vintage-android.yml`, локальные
++  `bootstrap.sh`, `build.sh`, `check_apk.py`, подробная инструкция в
++  `tools/vintage-solo/README.md`. Workflow не отправлен/не запущен в GitHub.
++
++## Проверено фактически
++
++Команда `python3 tools/vintage-solo/check.py`:
++
++- Компиляция двух production-классов без зависимостей и запуск **18 assertions**:
++  mulligan/bottom, цветовая манапроблема, Academy без артефактов, возврат Atraxa,
++  корректная/повторная/неполная установка ресурсов и недопустимый ZIP-путь.
++- Синтаксический разбор **14 Java-файлов интеграции**, без type checking.
++- Три колоды по 60 карт, наличие скрипта каждой карты, отсутствие превышения
++  restricted/copy limits и banned inclusions по Vintage-данным базового Forge.
++  У выбранных скриптов нет RemAIDeck:True. Это НЕ доказывает работоспособность.
++- Сверен официальный Vintage banned/restricted list на странице Wizards,
++  источники списков сохранены. Перед матчем также встроена runtime-валидация.
++- `bash -n` скриптов сборки и `git diff --check`.
++- Сборка ZIP ресурсов Python выполнена; это ресурсный архив, НЕ APK.
++
++Отчёт: `tools/vintage-solo/reports/local-checks.json`.
++
++**Полных партий: 0. Сравнительных партий: 0. APK: 0. Запусков Android: 0.**
++По всем девяти упорядоченным матчапам, включая зеркала и оба первых игрока,
++результат одинаков: НЕ ПРОВЕРЕНО. Нет измеренного винрейта/улучшения над Forge.
++
++## Среда и блокеры
++
++Java 17.0.20 и jdk.compiler присутствуют; бинарного javac нет, доступен запуск
++компилятора через `java --module jdk.compiler/com.sun.tools.javac.Main`.
++Maven, SDK, adb/sdkmanager и подходящие кеши не найдены. Локальная установка
++Maven/SDK проверялась без apt/sudo: загрузки остановлены сетевым механизмом
++с `network approval was cancelled before a decision was returned`.
++Не предпринимались обходы запретов. Адреса всех зависимостей в README.
++Разработка продолжилась несмотря на блокер; типовые проверки всего проекта
++без транзитивных Maven dependencies выполнить нельзя.
++
++## Как продолжить
++
++1. Прочитать `tools/vintage-solo/README.md`. Установить JDK17; запустить локальный
++   bootstrap или workflow в собственном GitHub fork. Внешний запуск здесь не выполнен.
++2. Собрать исходный Android APK на pinned upstream отдельно как контроль,
++   затем изменённый: `source .vintage-tools/env.sh` и
++   `xvfb-run -a bash tools/vintage-solo/build.sh`.
++   Исправить реальные ошибки компиляции/упаковки, если выявятся.
++3. `python3 tools/vintage-solo/check_apk.py`; установить подписанный APK и
++   проверить запуск в авиарежиме, первую партию и сворачивание. Не считать
++   проверку manifest/signature подтверждением запуска.
++4. Собрать desktop jar и выполнить `benchmark.py --jar ... --seeds 101 202 303`.
++   Запланировано 162 game; агрегатор сохраняет логи, ошибки, статистику. Сначала
++   прогнать одну конфигурацию напрямую через vintage-bench и проверить assets.
++5. Добавить реальные GameState/Forge тесты оплаты Workshop/Sphere/Trinisphere,
++   стека, Oath/Orchard, lethal/блокирования. Текущие локальные тесты этого не заменяют.
++6. По реальным логам исправить правила. Только после сравнения называть бота
++   усиленным. Завершить общий анализ позиции, короткий поиск последовательностей,
++   политику сохранения маны, все зеркальные поправки, аудит fallback hidden info.
++7. Завершить и проверить мобильный UX и восстановление после убийства процесса.
++   Сворачивание использует существующий HostedMatch pause/resume и ещё не проверено.
++
++## Известные ограничения
++
++- Полной специализированной логики боя/комбо/оплаты нет: это штатный Forge.
++  Общий short-sequence search не реализован; есть только перебор London bottom.
++- Начальная мана оценивается эвристикой двух ходов: не считать это точной
++  оплатой со всеми ограничениями/цветами. Forge проверяет оплату во время игры.
++- Специализированные правила не читают скрытую руку соперника или порядок
++  библиотек; полный аудит всех ветвей исходного ИИ остаётся необходимым.
++- Изменения UI проверены чтением исходников, не рендером/эмулятором.
++- Resource bundle заметно увеличивает APK и первый запуск; нужны измерения
++  размера/времени/памяти на устройстве. Сжатый ZIP генерируется сборкой, в исходный
++  архив не включён; все исходные ресурсы включены.
++- Профиль android-test-build подписывает публичным debug key. Это личная сборка,
++  не публикация в магазине. Публикация/отправка исходников наружу не выполнялась.
++
++## Состав передачи
++
++Полный исходный архив содержит tracked upstream-файлы и все изменения/новые
++файлы, включая workflow, тесты, отчёт, эту инструкцию и GPL. История .git,
++локальные caches/classes, сгенерированный ресурсный ZIP исключены.
++Дополнительно сохранён patch всех изменений относительно UPSTREAM_COMMIT.txt.
++
++
++## Продолжение: цель только APK, без новых игровых функций
++
++Проверены workflow и BUILD.md. Обновлён только build/verification pipeline:
++clean перед Maven install, сохранение bootstrap/build logs, отдельный artifact
++только с прошедшим проверку APK, SHA256 и отчётом. Проверка включает подпись,
++package, launcher, DEX, native LibGDX, CRC и точный состав offline ZIP.
++Добавлен push-trigger только для codex/vintage-apk; ручной запуск сохранён.
++Изменения pipeline проверены синтаксически, реальный APK пока отсутствует.
++
++GitHub plugin подключён: профиль K3lT1K. list_repositories,
++list_repositories_by_affiliation(owner), list_installed_accounts вернули пустые
++списки. Пользователь разрешил загрузку в указанный им репозиторий и запуск
++Actions, но точный URL в контексте/сохранённом проекте/поиске прошлой переписки
++не найден. Единственный origin — upstream Card-Forge/forge; туда ничего не
++загружалось. Перед дальнейшей работой получить URL выбранного репозитория и
++доступ установленного приложения к нему. Пошаговые действия в BUILD.md.
++После получения этих данных не запрашивать разрешение на загрузку/сборку заново.
++Продолжать сборку, читать логи, исправлять только блокирующие APK ошибки.
++
++Фактические статусы неизменны: APK 0, Android launch 0, полных партий 0,
++профильный бот в игре не проверен. Новые игровые функции не добавлялись.
++
++Последнее уточнение пользователя: разрешил новый репозиторий, имя неважно.
++Выбрано vintage-solo; операция создания репозитория отсутствует среди доступных
++GitHub tools. Попросить владельца создать Private repo с README через
++https://github.com/new?name=vintage-solo, предоставить доступ GitHub app и
++прислать URL. Это технически недоступная операция, не повторное согласование.
+diff --git a/UPSTREAM_COMMIT.txt b/UPSTREAM_COMMIT.txt
+new file mode 100644
+index 00000000..a619538f
+--- /dev/null
++++ b/UPSTREAM_COMMIT.txt
+@@ -0,0 +1 @@
++ce5b0dbf17733847929e990c77274893223e1fa6
+diff --git a/forge-ai/src/main/java/forge/ai/AiController.java b/forge-ai/src/main/java/forge/ai/AiController.java
+index f4b491e8..1b8e5c43 100644
+--- a/forge-ai/src/main/java/forge/ai/AiController.java
++++ b/forge-ai/src/main/java/forge/ai/AiController.java
+@@ -17,6 +17,8 @@
+  */
+ package forge.ai;
+ 
++import forge.ai.vintage.VintageStrategy;
++
+ import com.google.common.collect.Lists;
+ import com.google.common.collect.Sets;
+ 
+@@ -472,6 +474,8 @@ public class AiController {
+     }
+ 
+     private Card chooseBestLandToPlay(CardCollection landList) {
++        Card specialized = VintageStrategy.chooseLand(player, landList);
++        if (specialized != null) { return specialized; }
+         if (landList.isEmpty()) {
+             return null;
+         }
+@@ -856,6 +860,8 @@ public class AiController {
+             return canPlay;
+         }
+ 
++        forge.ai.vintage.VintageRemoval.refine(player, sa);
++
+         if (!ComputerUtilCost.canPayCost(sa, player, sa.isTrigger())) {
+             // for dependent costs with X, e.g. Repeal, which require a valid target to be specified before a decision can be made
+             // on whether the cost can be paid, this can only be checked late after canPlaySa has been run (or the AI will misplay)
+@@ -1600,6 +1606,8 @@ public class AiController {
+             Sentry.captureMessage(ex.getMessage() + "\nAssertionError [verifyTransitivity]: " + assertex);
+         }
+ 
++        VintageStrategy.order(player, all);
++
+         // in case of infinite loop reset below would not be reached
+         timeoutReached = false;
+ 
+@@ -1681,7 +1689,9 @@ public class AiController {
+                     continue;
+                 }
+ 
+-                // TODO could continue to try find another with higher rating (weighted by priority ordering)
++                // Record only an action accepted by Forge, not rejected candidates or concealed cards.
++                VintageStrategy.Priority preference = VintageStrategy.priority(player, sa);
++                VintageStrategy.log(player, preference.rule(), preference.reason());
+                 return sa;
+             }
+ 
+@@ -2220,6 +2230,8 @@ public class AiController {
+ 
+     public Card chooseCardToHiddenOriginChangeZone(ZoneType destination, List<ZoneType> origin, SpellAbility sa,
+                                                    CardCollection fetchList, Player player2, Player decider) {
++        Card specialized = VintageStrategy.search(player, fetchList, sa, player2, decider);
++        if (specialized != null) { return specialized; }
+         if (usesFullSimulation()) {
+             return simPicker.chooseCardToHiddenOriginChangeZone(destination, origin, sa, fetchList, player2, decider);
+         }
+diff --git a/forge-ai/src/main/java/forge/ai/PlayerControllerAi.java b/forge-ai/src/main/java/forge/ai/PlayerControllerAi.java
+index a2e252fb..00e6b9f8 100644
+--- a/forge-ai/src/main/java/forge/ai/PlayerControllerAi.java
++++ b/forge-ai/src/main/java/forge/ai/PlayerControllerAi.java
+@@ -1,5 +1,7 @@
+ package forge.ai;
+ 
++import forge.ai.vintage.VintageStrategy;
++
+ import com.google.common.collect.*;
+ import forge.LobbyPlayer;
+ import forge.ai.ability.ProtectAi;
+@@ -770,11 +772,14 @@ public class PlayerControllerAi extends PlayerController {
+ 
+     @Override
+     public boolean mulliganKeepHand(Player firstPlayer, int cardsToReturn)  {
+-        return !ComputerUtil.wantMulligan(player, cardsToReturn);
++        Boolean specialized = VintageStrategy.keepHand(player, cardsToReturn);
++        return specialized != null ? specialized : !ComputerUtil.wantMulligan(player, cardsToReturn);
+     }
+ 
+     @Override
+     public CardCollectionView tuckCardsViaMulligan(CardCollectionView hand, int cardsToReturn) {
++        CardCollection specialized = VintageStrategy.bottom(player, hand, cardsToReturn);
++        if (specialized != null) { return specialized; }
+         // TODO This is better than it was before, but still suboptimal (but fast).
+         // Maybe score a bunch of hands based on projected hand size and return the "duds"
+         int numLandsDesired = (player.getStartingHandSize() - cardsToReturn) / 2;
+diff --git a/forge-ai/src/main/java/forge/ai/ability/CounterAi.java b/forge-ai/src/main/java/forge/ai/ability/CounterAi.java
+index 8597aaa6..fdc9b868 100644
+--- a/forge-ai/src/main/java/forge/ai/ability/CounterAi.java
++++ b/forge-ai/src/main/java/forge/ai/ability/CounterAi.java
+@@ -143,6 +143,10 @@ public class CounterAi extends SpellAbilityAi {
+             }
+         }
+ 
++        if (forge.ai.vintage.VintageStrategy.urgentCounter(ai, tgtSA)) {
++            return new AiAbilityDecision(100, AiPlayDecision.WillPlay);
++        }
++
+         // Specific constraints for the AI to use/not use counterspells against specific groups of spells
+         boolean ctrCmc0ManaPerms = AiProfileUtil.getBoolProperty(ai, AiProps.ALWAYS_COUNTER_CMC_0_MANA_MAKING_PERMS);
+         boolean ctrDamageSpells = AiProfileUtil.getBoolProperty(ai, AiProps.ALWAYS_COUNTER_DAMAGE_SPELLS);
+diff --git a/forge-ai/src/main/java/forge/ai/vintage/OpeningHandPlanner.java b/forge-ai/src/main/java/forge/ai/vintage/OpeningHandPlanner.java
+new file mode 100644
+index 00000000..c5437f3e
+--- /dev/null
++++ b/forge-ai/src/main/java/forge/ai/vintage/OpeningHandPlanner.java
+@@ -0,0 +1,120 @@
++package forge.ai.vintage;
++
++import java.util.ArrayList;
++import java.util.List;
++
++/** Bounded London-mulligan search, not a mana-payment or MTG rules engine.
++ * Opening estimates are deliberately conservative; in-game payment remains Forge's job. */
++public final class OpeningHandPlanner {
++    public record OpeningCard(String name, int cmc, boolean land, boolean creature,
++                              boolean artifact, boolean white, boolean blue, boolean green) { }
++    public record Choice(List<Integer> bottom, int score, boolean keep, String reason) { }
++    private OpeningHandPlanner() { }
++
++    public static Choice choose(String profile, List<OpeningCard> hand, int returnCount) {
++        if (hand.size() > 10 || returnCount < 0 || returnCount > hand.size()) {
++            throw new IllegalArgumentException("Expected at most ten cards and a valid bottom count");
++        }
++        int keepCount = hand.size() - returnCount;
++        int bestScore = Integer.MIN_VALUE;
++        int bestMask = 0;
++        for (int mask = 0; mask < (1 << hand.size()); mask++) {
++            if (Integer.bitCount(mask) != keepCount) { continue; }
++            List<OpeningCard> kept = new ArrayList<>();
++            for (int i = 0; i < hand.size(); i++) {
++                if ((mask & (1 << i)) != 0) { kept.add(hand.get(i)); }
++            }
++            int score = score(profile, kept);
++            if (score > bestScore) { bestScore = score; bestMask = mask; }
++        }
++        List<Integer> bottom = new ArrayList<>();
++        for (int i = 0; i < hand.size(); i++) {
++            if ((bestMask & (1 << i)) == 0) { bottom.add(i); }
++        }
++        // At four cards stop trading away resources. This is a policy, not a strength claim.
++        int threshold = switch (profile) { case "INITIATIVE" -> 44; case "WORKSHOP" -> 42; default -> 42; };
++        return new Choice(List.copyOf(bottom), bestScore, keepCount <= 4 || bestScore >= threshold,
++                "London: retained-hand mana, colours, threats and engine; score=" + bestScore);
++    }
++
++    private static int count(List<OpeningCard> hand, String name) {
++        return (int) hand.stream().filter(c -> c.name().equals(name)).count();
++    }
++
++    public static int score(String profile, List<OpeningCard> hand) {
++        int lands = 0, white = 0, blue = 0, green = 0, rocks = 0, mana = 0;
++        int threats = 0, bluePitch = 0, imprint = 0, expensive = 0;
++        List<Integer> landMana = new ArrayList<>();
++        for (OpeningCard c : hand) {
++            String n = c.name();
++            boolean land = c.land() || n.equals("Witch Enchanter");
++            if (land) {
++                lands++;
++                int amount = switch (n) {
++                    case "Mishra's Workshop" -> profile.equals("WORKSHOP") ? 3 : 0;
++                    case "Ancient Tomb" -> 2;
++                    // Cannot count Academy without artifacts, or Saga's chapter before it resolves.
++                    case "Tolarian Academy", "Urza's Saga" -> 0;
++                    default -> 1;
++                };
++                landMana.add(amount);
++                if (n.equals("Plains") || n.equals("Karakas") || n.equals("Cavern of Souls")
++                        || n.equals("Witch Enchanter") || n.equals("Forbidden Orchard")) { white++; }
++                if (n.equals("Tropical Island") || n.equals("Volcanic Island") || n.equals("Hedge Maze")
++                        || n.equals("Thundering Falls") || n.equals("Forbidden Orchard") || n.equals("Island")
++                        || n.equals("Misty Rainforest") || n.equals("Scalding Tarn") || n.equals("Polluted Delta")) { blue++; }
++                if (n.equals("Tropical Island") || n.equals("Hedge Maze") || n.equals("Forbidden Orchard")
++                        || n.equals("Boseiju, Who Endures") || n.equals("Misty Rainforest")
++                        || n.equals("Scalding Tarn") || n.equals("Polluted Delta")) { green++; }
++            } else {
++                if (c.blue() && !n.equals("Force of Will")) { bluePitch++; }
++                if (!c.artifact() && c.white()) { imprint++; }
++                if (c.creature() && c.cmc() <= 4) { threats++; }
++                if (c.cmc() >= 6 && !n.equals("Dig Through Time") && !n.equals("Treasure Cruise")) { expensive++; }
++                if (n.startsWith("Mox ")) {
++                    rocks++; mana++;
++                    if (n.equals("Mox Pearl")) { white++; }
++                    if (n.equals("Mox Sapphire")) { blue++; }
++                    if (n.equals("Mox Emerald")) { green++; }
++                }
++                if (n.equals("Mana Crypt")) { rocks++; mana += 2; }
++                if (n.equals("Black Lotus")) { rocks++; mana += 3; white++; blue++; green++; }
++            }
++        }
++        landMana.sort(java.util.Comparator.reverseOrder());
++        // Two-turn development estimate; do not pretend both lands can be played on turn one.
++        for (int i = 0; i < Math.min(2, landMana.size()); i++) { mana += landMana.get(i); }
++        int chrome = Math.min(count(hand, "Chrome Mox"), Math.max(0, imprint - 1));
++        mana += chrome; white += chrome;
++        if (count(hand, "Sol Ring") > 0 && mana > 0) { mana++; rocks++; }
++        int score = Math.min(mana, 4) * 8 + Math.min(lands, 2) * 4;
++        if (lands == 0) { score -= 28; }
++        score -= Math.max(0, lands - 3) * 9;
++        switch (profile) {
++            case "INITIATIVE":
++                score += Math.min(threats, 2) * 9;
++                if (white == 0 || mana < 3) { score -= 36; }
++                if (count(hand, "White Plume Adventurer") + count(hand, "Seasoned Dungeoneer") > 0) { score += 8; }
++                score -= Math.max(0, expensive - (chrome > 0 ? 1 : 0)) * 9;
++                break;
++            case "WORKSHOP":
++                score += Math.min(threats, 2) * 8;
++                if (mana < 2 || threats == 0) { score -= 30; }
++                if (count(hand, "Mishra's Workshop") > 0) { score += 8; }
++                if (count(hand, "Sphere of Resistance") > 0 && threats > 0) { score += 6; }
++                break;
++            default:
++                int oath = count(hand, "Oath of Druids");
++                if (oath > 0 && green > 0 && mana >= 2) { score += 18; }
++                if (oath > 0 && count(hand, "Forbidden Orchard") > 0) { score += 9; }
++                if (count(hand, "Force of Will") > 0 && bluePitch > 0) { score += 10; }
++                if (blue == 0 || mana < 2) { score -= 30; }
++                if (oath == 0 && count(hand, "Stock Up") + count(hand, "Brainstorm")
++                        + count(hand, "Ancestral Recall") == 0) { score -= 15; }
++                score -= expensive * 16; // Prefer returning Atraxa to the library, never inspect its order.
++                score -= Math.max(0, oath - 1) * 8;
++                break;
++        }
++        return score;
++    }
++}
+diff --git a/forge-ai/src/main/java/forge/ai/vintage/VintageRemoval.java b/forge-ai/src/main/java/forge/ai/vintage/VintageRemoval.java
+new file mode 100644
+index 00000000..70f23261
+--- /dev/null
++++ b/forge-ai/src/main/java/forge/ai/vintage/VintageRemoval.java
+@@ -0,0 +1,47 @@
++package forge.ai.vintage;
++
++import forge.deck.VintageSolo.Archetype;
++import forge.game.card.Card;
++import forge.game.player.Player;
++import forge.game.spellability.SpellAbility;
++import forge.game.zone.ZoneType;
++
++/** Narrow target refinement; willingness, combat tricks and cost payment remain Forge's. */
++public final class VintageRemoval {
++    private VintageRemoval() { }
++    public static void refine(Player player, SpellAbility ability) {
++        if (!VintageStrategy.enabled(player) || !ability.getHostCard().getName().equals("Swords to Plowshares")
++                || !ability.isSpell() || !ability.usesTargeting()
++                || ability.getTargets().getTargetCards().size() != 1
++                || !player.getGame().getStack().isEmpty()
++                || player.getGame().getPhaseHandler().inCombat()) { return; }
++        Card previous = ability.getTargets().getTargetCards().get(0);
++        // Preserve Forge's self-removal/life-saving lines and every combat/stack response.
++        if (!previous.getController().isOpponentOf(player)) { return; }
++        Card best = previous;
++        int bestScore = score(player, previous);
++        for (Card candidate : player.getOpponents().getCreaturesInPlay()) {
++            if (candidate.isFaceDown() || !candidate.isInZone(ZoneType.Battlefield)
++                    || !ability.canTarget(candidate)) { continue; }
++            int score = score(player, candidate);
++            if (score > bestScore) { best = candidate; bestScore = score; }
++        }
++        if (best != previous) {
++            ability.resetTargets();
++            ability.getTargets().add(best);
++            VintageStrategy.log(player, "removal-threat", "target " + best.getName() + "; public engine/pressure score=" + bestScore);
++        }
++    }
++    private static int score(Player player, Card card) {
++        int score = Math.max(0, card.getNetPower()) * 3;
++        return score + switch (card.getName()) {
++            case "Atraxa, Grand Unifier" -> 90;
++            case "Arcbound Ravager" -> 65;
++            case "Steel Overseer" -> card.getController().getCreaturesInPlay().size() >= 3 ? 70 : 20;
++            case "Walking Ballista" -> 60;
++            case "Seasoned Dungeoneer", "White Plume Adventurer" -> 35;
++            case "Archon of Emeria" -> VintageStrategy.profile(player) == Archetype.OATH ? 75 : 10;
++            default -> 0;
++        };
++    }
++}
+diff --git a/forge-ai/src/main/java/forge/ai/vintage/VintageStrategy.java b/forge-ai/src/main/java/forge/ai/vintage/VintageStrategy.java
+new file mode 100644
+index 00000000..91f1a774
+--- /dev/null
++++ b/forge-ai/src/main/java/forge/ai/vintage/VintageStrategy.java
+@@ -0,0 +1,221 @@
++package forge.ai.vintage;
++
++import forge.deck.VintageSolo;
++import forge.deck.VintageSolo.Archetype;
++import forge.game.GameLogEntryType;
++import forge.game.card.Card;
++import forge.game.card.CardCollection;
++import forge.game.card.CardCollectionView;
++import forge.game.player.Player;
++import forge.game.spellability.SpellAbility;
++import forge.game.zone.ZoneType;
++
++import java.util.ArrayList;
++import java.util.Comparator;
++import java.util.HashMap;
++import java.util.List;
++import java.util.Map;
++
++/** Soft strategic preferences. Forge still checks timing, targets, costs and mana restrictions.
++ * Reads own hand and public battlefield only. Search-option lists come from the engine.
++ * No RNG, library-order inspection, opponent-hand access, or direct state mutation. */
++public final class VintageStrategy {
++    public record Priority(int value, String rule, String reason) { }
++    private static final Priority FALLBACK = new Priority(0, "forge", "existing Forge evaluation");
++    private VintageStrategy() { }
++
++    public static boolean enabled(Player p) {
++        return p.getRegisteredPlayer().getDeck().getAiHints().contains(VintageSolo.SPECIALIST)
++                && VintageSolo.archetype(p.getRegisteredPlayer().getDeck()) != null;
++    }
++    public static Archetype profile(Player p) {
++        return VintageSolo.archetype(p.getRegisteredPlayer().getDeck());
++    }
++    private static boolean has(Iterable<Card> cards, String name) {
++        for (Card c : cards) { if (!c.isFaceDown() && c.getName().equals(name)) { return true; } }
++        return false;
++    }
++    private static int count(Iterable<Card> cards, String name) {
++        int count = 0;
++        for (Card c : cards) { if (!c.isFaceDown() && c.getName().equals(name)) { count++; } }
++        return count;
++    }
++    public static void log(Player p, String rule, String reason) {
++        if (enabled(p)) {
++            p.getGame().getGameLog().add(GameLogEntryType.INFORMATION,
++                    "[Vintage AI] " + profile(p) + " / " + rule + ": " + reason);
++        }
++    }
++    private static OpeningHandPlanner.Choice opening(Player p, CardCollectionView hand, int bottom) {
++        List<OpeningHandPlanner.OpeningCard> cards = new ArrayList<>();
++        for (Card c : hand) {
++            cards.add(new OpeningHandPlanner.OpeningCard(c.getName(), c.getCMC(), c.isLand(), c.isCreature(),
++                    c.isArtifact(), c.getColor().hasWhite(), c.getColor().hasBlue(), c.getColor().hasGreen()));
++        }
++        return OpeningHandPlanner.choose(profile(p).name(), cards, bottom);
++    }
++    public static Boolean keepHand(Player p, int bottom) {
++        CardCollectionView hand = p.getCardsIn(ZoneType.Hand);
++        if (!enabled(p) || hand.size() > 10) { return null; }
++        OpeningHandPlanner.Choice choice = opening(p, hand, bottom);
++        log(p, "mulligan", (choice.keep() ? "keep; " : "mulligan; ") + choice.reason());
++        return choice.keep();
++    }
++    public static CardCollection bottom(Player p, CardCollectionView hand, int n) {
++        if (!enabled(p) || hand.size() > 10) { return null; }
++        OpeningHandPlanner.Choice choice = opening(p, hand, n);
++        CardCollection result = new CardCollection();
++        for (int index : choice.bottom()) { result.add(hand.get(index)); }
++        log(p, "bottom", "return " + result.size() + " cards; " + choice.reason());
++        return result;
++    }
++
++    /** Apply after Forge's normal ordering. A stable sort preserves all fallback ties. */
++    public static void order(Player p, List<SpellAbility> abilities) {
++        if (!enabled(p)) { return; }
++        Map<SpellAbility, Integer> scores = new HashMap<>();
++        for (SpellAbility sa : abilities) { scores.put(sa, priority(p, sa).value()); }
++        abilities.sort(Comparator.comparingInt((SpellAbility sa) -> scores.get(sa)).reversed());
++    }
++    public static Priority priority(Player p, SpellAbility sa) {
++        if (!enabled(p) || sa.getHostCard().isFaceDown()) { return FALLBACK; }
++        Card c = sa.getHostCard();
++        // Never score a concealed library card just because Forge enumerated its abilities.
++        if (!(c.isInZone(ZoneType.Hand) && c.getController().equals(p))
++                && !c.isInZone(ZoneType.Battlefield) && !c.isInZone(ZoneType.Stack)) { return FALLBACK; }
++        String n = c.getName();
++        CardCollectionView hand = p.getCardsIn(ZoneType.Hand);
++        CardCollectionView board = p.getCardsIn(ZoneType.Battlefield);
++        boolean emptyStack = p.getGame().getStack().isEmpty();
++        if (!emptyStack) { return FALLBACK; } // Counter timing/response belongs to Forge's stack evaluator.
++        if (sa.isSpell() && (n.startsWith("Mox ") || n.equals("Black Lotus") || n.equals("Mana Crypt")
++                || n.equals("Sol Ring") || n.equals("Chrome Mox"))) {
++            boolean disabled = has(p.getGame().getCardsIn(ZoneType.Battlefield), "Null Rod")
++                    || has(p.getGame().getCardsIn(ZoneType.Battlefield), "Clarion Conqueror");
++            if (!disabled) { return new Priority(90, "mana-before-lock", "develop mana before symmetric taxes"); }
++        }
++        return switch (profile(p)) {
++            case INITIATIVE -> initiative(p, sa, n, board);
++            case WORKSHOP -> workshop(p, sa, n, hand, board);
++            case OATH -> oath(p, sa, n, hand, board);
++        };
++    }
++    private static Priority initiative(Player p, SpellAbility sa, String n, CardCollectionView board) {
++        if (!sa.isSpell()) { return FALLBACK; }
++        if (n.equals("Clarion Conqueror") && opponentProfile(p) == Archetype.WORKSHOP) {
++            return new Priority(85, "workshop-disruption", "shut down opposing artifact activations");
++        }
++        if (n.equals("White Plume Adventurer") || n.equals("Seasoned Dungeoneer")) {
++            return new Priority(80, "initiative-pressure", "develop initiative and combat pressure");
++        }
++        if (n.equals("Archon of Emeria") && opponentProfile(p) == Archetype.OATH && !has(board, n)) {
++            return new Priority(75, "oath-disruption", "limit the control deck's spell sequencing");
++        }
++        return FALLBACK;
++    }
++    private static Priority workshop(Player p, SpellAbility sa, String n, CardCollectionView hand, CardCollectionView board) {
++        if (!sa.isSpell()) { return FALLBACK; }
++        if (n.equals("Foundry Inspector") && hand.size() > 2) {
++            return new Priority(85, "discount-before-tax", "establish artifact discount before further spells");
++        }
++        if ((n.equals("Sphere of Resistance") || n.equals("Thorn of Amethyst") || n.equals("Trinisphere"))
++                && opponentProfile(p) == Archetype.OATH && !has(board, n)) {
++            return new Priority(75, "tax-control", "tax control/combo after mana development");
++        }
++        if ((n.equals("Steel Overseer") || n.equals("Arcbound Ravager")) && p.getCreaturesInPlay().size() >= 2) {
++            return new Priority(65, "scale-board", "grow an established artifact board");
++        }
++        if (sa.getHostCard().isCreature() && opponentProfile(p) == Archetype.WORKSHOP) {
++            return new Priority(55, "mirror-board", "in the mirror prioritize bodies over symmetric taxes");
++        }
++        return FALLBACK;
++    }
++    private static Priority oath(Player p, SpellAbility sa, String n, CardCollectionView hand, CardCollectionView board) {
++        if (sa.isSpell() && n.equals("Oath of Druids") && !has(board, n)) {
++            int theirCreatures = p.getOpponents().getCreaturesInPlay().size();
++            if (theirCreatures > p.getCreaturesInPlay().size() || has(board, "Forbidden Orchard")) {
++                return new Priority(85, "oath-engine", "establish Oath with a public creature imbalance or Orchard");
++            }
++        }
++        if (sa.isSpell() && n.equals("Null Rod") && opponentProfile(p) == Archetype.WORKSHOP && !has(board, n)) {
++            return new Priority(80, "disable-workshop", "disable artifact activations in the Workshop matchup");
++        }
++        if (sa.isSpell() && (n.equals("Stock Up") || n.equals("Brainstorm") || n.equals("Ancestral Recall"))
++                && !has(hand, "Oath of Druids") && !has(board, "Oath of Druids")) {
++            return new Priority(60, "find-engine", "find the missing engine using ordinary draw effects");
++        }
++        return FALLBACK;
++    }
++    /** Called after CounterAi has validated stack target and unless-cost logic.
++     * Do not randomly pass low-CMC engines that invalidate the selected deck's plan. */
++    public static boolean urgentCounter(Player p, SpellAbility target) {
++        if (!enabled(p) || target == null || target.getHostCard().isFaceDown()
++                || !target.getActivatingPlayer().isOpponentOf(p)) { return false; }
++        String name = target.getHostCard().getName();
++        boolean urgent = name.equals("Ancestral Recall") || name.equals("Time Walk")
++                || (name.equals("Oath of Druids") && !has(p.getCardsIn(ZoneType.Battlefield), name))
++                || (profile(p) == Archetype.WORKSHOP && (name.equals("Null Rod") || name.equals("Clarion Conqueror")))
++                || (profile(p) == Archetype.OATH && name.equals("Archon of Emeria"));
++        if (urgent) { log(p, "counter-engine", "prioritize public stack threat: " + name); }
++        return urgent;
++    }
++
++    public static Archetype opponentProfile(Player p) {
++        Player other = p.getWeakestOpponent();
++        return other == null ? null : VintageSolo.archetype(other.getRegisteredPlayer().getDeck());
++    }
++
++    public static Card chooseLand(Player p, CardCollection options) {
++        if (!enabled(p) || options.isEmpty()) { return null; }
++        // MDFCs and unusual board states remain with Forge's original land evaluator.
++        Card best = null;
++        int score = 0;
++        for (Card c : options) {
++            if (!c.isLand() || c.isFaceDown()) { continue; }
++            int next = landScore(p, c);
++            if (next > score) { score = next; best = c; }
++        }
++        if (best != null) { log(p, "land", best.getName() + "; profile mana/engine priority"); }
++        return best;
++    }
++    private static int landScore(Player p, Card c) {
++        String n = c.getName();
++        CardCollectionView hand = p.getCardsIn(ZoneType.Hand);
++        CardCollectionView board = p.getCardsIn(ZoneType.Battlefield);
++        if (profile(p) == Archetype.WORKSHOP && n.equals("Mishra's Workshop")
++                && hand.stream().anyMatch(x -> x.isArtifact() && !x.isLand())) { return 100; }
++        if (profile(p) == Archetype.OATH) {
++            if (n.equals("Forbidden Orchard") && (has(hand, "Oath of Druids") || has(board, "Oath of Druids"))
++                    && p.getOpponents().getCreaturesInPlay().size() <= p.getCreaturesInPlay().size()
++                    && opponentProfile(p) != Archetype.OATH) { return 95; }
++            if (n.equals("Tropical Island") && !has(board, n)) { return 70; }
++        }
++        if (profile(p) == Archetype.INITIATIVE) {
++            boolean white = has(board, "Plains") || has(board, "Karakas") || has(board, "Mox Pearl")
++                    || has(board, "Cavern of Souls") || has(board, "Witch-Blessed Meadow");
++            if (!white && (n.equals("Plains") || n.equals("Karakas") || n.equals("Cavern of Souls"))) { return 80; }
++            if (white && n.equals("Ancient Tomb") && p.getLife() > 6) { return 75; }
++        }
++        return 0;
++    }
++    /** Legal, unordered tutor options. This callback is reached only when an actual search permits it. */
++    public static Card search(Player p, CardCollection options, SpellAbility sa, Player owner, Player decider) {
++        if (!enabled(p) || !p.equals(owner) || !p.equals(decider) || options.isEmpty()) { return null; }
++        String source = sa.getHostCard().getName();
++        if (!List.of("Misty Rainforest", "Scalding Tarn", "Polluted Delta", "Lórien Revealed", "Urza's Saga").contains(source)) {
++            return null;
++        }
++        Card best = null;
++        int bestScore = 0;
++        for (Card c : options) {
++            int score = landScore(p, c);
++            if (source.equals("Urza's Saga")) {
++                score = c.getName().equals("Sol Ring") ? 65 : c.getName().equals("Mox Pearl") ? 50 : 0;
++            }
++            if (score > bestScore || (score > 0 && score == bestScore && best != null
++                    && c.getName().compareTo(best.getName()) < 0)) { best = c; bestScore = score; }
++        }
++        if (best != null) { log(p, "search", "choose engine/mana role from legal search options"); }
++        return best;
++    }
++}
+diff --git a/forge-core/src/main/java/forge/deck/VintageSolo.java b/forge-core/src/main/java/forge/deck/VintageSolo.java
+new file mode 100644
+index 00000000..794e8a3d
+--- /dev/null
++++ b/forge-core/src/main/java/forge/deck/VintageSolo.java
+@@ -0,0 +1,33 @@
++package forge.deck;
++
++/** The fixed, public roster. No rule engine or card implementations live here. */
++public final class VintageSolo {
++    public static final String SPECIALIST = "VintageSoloSpecialist";
++    public enum Archetype {
++        INITIATIVE("initiative", "Mono-White Initiative", "Давление и инициатива"),
++        WORKSHOP("workshop", "Workshop Aggro", "Артефакты и ограничения"),
++        OATH("oath", "Oath of Druids", "Контроль и большие существа");
++        public final String file;
++        public final String title;
++        public final String plan;
++        Archetype(String file, String title, String plan) {
++            this.file = file;
++            this.title = title;
++            this.plan = plan;
++        }
++        @Override public String toString() { return title; }
++    }
++    private VintageSolo() { }
++    public static Archetype archetype(Deck deck) {
++        for (Archetype a : Archetype.values()) {
++            if (deck.getAiHints().contains("VintageSolo:" + a.name())) { return a; }
++        }
++        return null;
++    }
++    public static void configure(Deck deck, Archetype archetype, boolean specialist) {
++        deck.getAiHints().removeIf(h -> h.startsWith("VintageSolo:"));
++        deck.setAiHints("VintageSolo:" + archetype.name());
++        deck.getAiHints().remove(SPECIALIST);
++        if (specialist) { deck.setAiHints(SPECIALIST); }
++    }
++}
+diff --git a/forge-core/src/main/java/forge/util/VintageResources.java b/forge-core/src/main/java/forge/util/VintageResources.java
+new file mode 100644
+index 00000000..f46a81ef
+--- /dev/null
++++ b/forge-core/src/main/java/forge/util/VintageResources.java
+@@ -0,0 +1,45 @@
++package forge.util;
++
++import java.io.File;
++import java.io.IOException;
++import java.io.InputStream;
++import java.nio.charset.StandardCharsets;
++import java.nio.file.Files;
++import java.nio.file.Path;
++import java.nio.file.StandardCopyOption;
++import java.util.zip.ZipEntry;
++import java.util.zip.ZipInputStream;
++
++/** Installs the APK's resource snapshot. A failed install never writes the completion marker. */
++public final class VintageResources {
++    private VintageResources() { }
++    public static void install(InputStream input, File directory, String version) throws IOException {
++        Path root = directory.toPath().toAbsolutePath().normalize();
++        Files.createDirectories(root);
++        Path marker = root.resolve("vintage-res.version");
++        try (ZipInputStream zip = new ZipInputStream(input, StandardCharsets.UTF_8)) {
++            if (Files.isRegularFile(marker) && new String(Files.readAllBytes(marker), StandardCharsets.UTF_8).equals(version)
++                    && Files.isRegularFile(root.resolve("res/vintage-solo/oath.dck"))) { return; }
++            ZipEntry entry;
++            int files = 0;
++            while ((entry = zip.getNextEntry()) != null) {
++                Path target = root.resolve(entry.getName()).normalize();
++                if (!target.startsWith(root.resolve("res")) || entry.getName().contains("\\")) {
++                    throw new IOException("Invalid bundled resource path: " + entry.getName());
++                }
++                if (entry.isDirectory()) { Files.createDirectories(target); continue; }
++                Files.createDirectories(target.getParent());
++                Path temporary = Files.createTempFile(target.getParent(), ".install-", ".tmp");
++                try {
++                    Files.copy(zip, temporary, StandardCopyOption.REPLACE_EXISTING);
++                    Files.move(temporary, target, StandardCopyOption.REPLACE_EXISTING);
++                } finally { Files.deleteIfExists(temporary); }
++                files++;
++            }
++            if (files == 0 || !Files.isRegularFile(root.resolve("res/vintage-solo/oath.dck"))) {
++                throw new IOException("Incomplete Vintage Solo resource bundle");
++            }
++            Files.write(marker, version.getBytes(StandardCharsets.UTF_8));
++        }
++    }
++}
+diff --git a/forge-gui-android/res/values/strings.xml b/forge-gui-android/res/values/strings.xml
+index 3a47e731..77b7e4e0 100644
+--- a/forge-gui-android/res/values/strings.xml
++++ b/forge-gui-android/res/values/strings.xml
+@@ -1,4 +1,4 @@
+ <?xml version="1.0" encoding="utf-8"?>
+ <resources>
+-    <string name="app_name">Forge</string>
++    <string name="app_name">Vintage Solo</string>
+ </resources>
+\ No newline at end of file
+diff --git a/forge-gui-android/src/forge/app/Main.java b/forge-gui-android/src/forge/app/Main.java
+index 28d949d8..f31d59f1 100644
+--- a/forge-gui-android/src/forge/app/Main.java
++++ b/forge-gui-android/src/forge/app/Main.java
+@@ -112,7 +112,7 @@ public class Main extends AndroidApplication {
+ 
+     // The package name the resources are compiled under (stable across dev/prod).
+     // If you ever change the base app package, update this constant once.
+-    private static final String RES_PKG_FALLBACK = "forge.app";
++    private static final String RES_PKG_FALLBACK = "forge.vintage.solo";
+ 
+     private int resId(String type, String name) {
+         // 1) Try fully-qualified with *runtime* package
+@@ -222,7 +222,7 @@ public class Main extends AndroidApplication {
+         ActivityManager.MemoryInfo memInfo = new ActivityManager.MemoryInfo();
+         actManager.getMemoryInfo(memInfo);
+ 
+-        boolean permissiongranted = checkPermission();
++        boolean permissiongranted = true; // Bundled assets live in app-private storage.
+         Gadapter = new AndroidAdapter(getContext());
+         String cpu = "";
+         String soc = "";
+@@ -261,7 +261,24 @@ public class Main extends AndroidApplication {
+         os.setBuild(Build.DISPLAY);
+         os.setRawDescription(getAndroidOSName());
+ 
+-        initForge(Gadapter, new HWInfo(device, os, getChipset), permissiongranted, isTabletDevice(getContext()));
++        final HWInfo vintageHardware = new HWInfo(device, os, getChipset);
++        // Unpack before Forge tries loading its skin; keep startup I/O off the Android UI thread.
++        new Thread(() -> {
++            try {
++                String resourceVersion;
++                try (InputStream version = getAssets().open("vintage-res.version")) {
++                    resourceVersion = new java.io.BufferedReader(new java.io.InputStreamReader(version, StandardCharsets.UTF_8)).readLine();
++                }
++                forge.util.VintageResources.install(getAssets().open("vintage-res.zip"),
++                        new java.io.File(getFilesDir(), "VintageSolo"), resourceVersion);
++                runOnUiThread(() -> initForge(Gadapter, vintageHardware, true, isTabletDevice(getContext())));
++            } catch (Exception error) {
++                runOnUiThread(() -> new android.app.AlertDialog.Builder(this)
++                        .setTitle("Vintage Solo: resources")
++                        .setMessage("Cannot install bundled resources: " + error.getMessage())
++                        .setPositiveButton("Close", (dialog, which) -> finish()).show());
++            }
++        }, "Vintage resource install").start();
+     }
+ 
+     private void crossfade(View contentView, View previousView) {
+@@ -533,13 +550,7 @@ public class Main extends AndroidApplication {
+         config.useImmersiveMode = false;
+         config.nativeLoader = () -> ReLinker.loadLibrary(getContext(), "gdx");
+ 
+-        if (!Environment.MEDIA_MOUNTED.equals(Environment.getExternalStorageState())) {
+-            String message = getDeviceName() + "\n" + "Android " + Build.VERSION.RELEASE + "\n" + "RAM " + totalRAM + "MB" + "\n" + "LibGDX " + Version.VERSION + "\n" + "Can't access external storage";
+-            Main.this.setRequestedOrientation(Main.this.getResources().getConfiguration().orientation);
+-            loadGame(hwInfo, "", "", false, adapter, permissiongranted, isTabletDevice, config, true, message);
+-            return;
+-        }
+-        ASSETS_DIR = Build.VERSION.SDK_INT > Build.VERSION_CODES.Q ? getContext().getObbDir() + "/Forge/" : Environment.getExternalStorageDirectory() + "/Forge/";
++        ASSETS_DIR = new java.io.File(getFilesDir(), "VintageSolo").getAbsolutePath() + "/";
+         if (!FileUtil.ensureDirectoryExists(ASSETS_DIR)) {
+             String message = getDeviceName() + "\n" + "Android " + Build.VERSION.RELEASE + "\n" + "RAM " + totalRAM + "MB" + "\n" + "LibGDX " + Version.VERSION + "\n" + "Can't access external storage\nPath: " + ASSETS_DIR;
+             Main.this.setRequestedOrientation(Main.this.getResources().getConfiguration().orientation);
+@@ -561,7 +572,8 @@ public class Main extends AndroidApplication {
+         }
+         //enforce orientation based on whether device is a tablet and user preference
+         adapter.switchOrientationFile = ASSETS_DIR + "switch_orientation.ini";
+-        boolean landscapeMode = adapter.isTablet == !FileUtil.doesFileExist(adapter.switchOrientationFile);
++        FileUtil.writeFile(adapter.switchOrientationFile, "");
++        boolean landscapeMode = true; // Vintage Solo is a landscape-only card table.
+ 
+         String info = totalRAM < 3500 || Build.VERSION.SDK_INT < Build.VERSION_CODES.R ? "Device Specification Check\n" + getDeviceName()
+                 + "\n" + "Android " + Build.VERSION.RELEASE + "\n" + "RAM " + totalRAM + "MB\n\nRecommended API:" : "";
+@@ -807,7 +819,7 @@ public class Main extends AndroidApplication {
+                     return true;
+                 } else {
+                     Intent intent = new Intent(Intent.ACTION_INSTALL_PACKAGE);
+-                    intent.setData(PublicFileProvider.getUriForFile(getContext(), "com.mydomain.publicfileprovider", new File(filename)));
++                    intent.setData(PublicFileProvider.getUriForFile(getContext(), "forge.vintage.solo.publicfileprovider", new File(filename)));
+                     intent.setFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                     startActivity(intent);
+                     return true;
+diff --git a/forge-gui-android/src/main/AndroidManifest.xml b/forge-gui-android/src/main/AndroidManifest.xml
+index 841e2238..9320787c 100644
+--- a/forge-gui-android/src/main/AndroidManifest.xml
++++ b/forge-gui-android/src/main/AndroidManifest.xml
+@@ -1,27 +1,10 @@
+ <?xml version="1.0" encoding="utf-8"?>
+ <manifest xmlns:android="http://schemas.android.com/apk/res/android"
+-    package="forge.app">
++    package="forge.vintage.solo">
+ 
+     <uses-sdk
+         android:minSdkVersion="26"
+         android:targetSdkVersion="35" />
+-    <!-- When your app targets Android 11 or higher and it declares the MANAGE_EXTERNAL_STORAGE permission,
+-         Android Studio shows the lint warning. This warning reminds you that the Google Play store has a policy
+-         that limits usage of the permission. -->
+-    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"/>
+-    <!-- Required only if your app needs to access images or photos
+-         that other apps created. -->
+-    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+-    <!-- Required only if your app needs to access videos
+-         that other apps created. -->
+-    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
+-    <!-- Required only if your app needs to access audio files
+-         that other apps created. -->
+-    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
+-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
+-    <!-- This one needs Android Runtime Permission for Android 6+ -->
+-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
+-    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+     <uses-permission android:name="android.permission.VIBRATE"/>
+     <uses-permission android:name="android.permission.INTERNET"/>
+@@ -39,7 +22,7 @@
+         android:largeHeap="true"
+         android:resizeableActivity="false">
+         <activity
+-            android:name=".Launcher"
++            android:name="forge.app.Launcher"
+             android:configChanges="density|fontScale|keyboard|keyboardHidden|layoutDirection|locale|mcc|mnc|navigation|orientation|screenLayout|screenSize|smallestScreenSize|touchscreen|uiMode"
+             android:theme="@style/Theme.Transparent"
+             android:exported="true">
+@@ -54,15 +37,16 @@
+                 </intent-filter>
+         </activity>
+         <activity
+-            android:name=".Main"
++            android:name="forge.app.Main"
++            android:screenOrientation="sensorLandscape"
+             android:label="@string/app_name"
+             android:configChanges="density|fontScale|keyboard|keyboardHidden|layoutDirection|locale|mcc|mnc|navigation|orientation|screenLayout|screenSize|smallestScreenSize|touchscreen|uiMode"
+             android:launchMode="singleInstance"
+             android:theme="@style/NormalTheme"
+             android:exported="false">
+         </activity>
+-        <meta-data android:name="io.sentry.dsn" android:value="https://a0b8dbad9b8a49cfa51bf65d462e8dae:b3f27d7461224cb8836eb5c6050c666c@sentry.asgardsrealm.net/2?buffer.enabled=false" />
+-        <meta-data android:name="io.sentry.send-default-pii" android:value="true" />
++        <meta-data android:name="io.sentry.dsn" android:value="" />
++        <meta-data android:name="io.sentry.send-default-pii" android:value="false" />
+         <!-- enable automatic breadcrumbs for user interactions (clicks, swipes, scrolls) -->
+         <!-- meta-data android:name="io.sentry.traces.user-interaction.enable" android:value="true" /-->
+         <!-- enable screenshot for crashes -->
+@@ -83,16 +67,16 @@
+         <!-- manually added -->
+         <provider
+             android:name="io.sentry.android.core.SentryInitProvider"
+-            android:authorities=".SentryInitProvider"
++            android:authorities="forge.vintage.solo.SentryInitProvider"
+             android:exported="false"/>
+         <provider
+             android:name="io.sentry.android.core.SentryPerformanceProvider"
+-            android:authorities=".SentryPerformanceProvider"
++            android:authorities="forge.vintage.solo.SentryPerformanceProvider"
+             android:initOrder="200"
+             android:exported="false"/>
+         <provider
+                 android:name="de.cketti.fileprovider.PublicFileProvider"
+-                android:authorities="com.mydomain.publicfileprovider"
++                android:authorities="forge.vintage.solo.publicfileprovider"
+                 android:exported="true">
+ 
+             <meta-data
+diff --git a/forge-gui-desktop/src/main/java/forge/view/Main.java b/forge-gui-desktop/src/main/java/forge/view/Main.java
+index ebe7d398..dad3ffff 100644
+--- a/forge-gui-desktop/src/main/java/forge/view/Main.java
++++ b/forge-gui-desktop/src/main/java/forge/view/Main.java
+@@ -64,6 +64,7 @@ public final class Main {
+ 
+         Sentry.init(options -> {
+             options.setEnableExternalConfiguration(true);
++            if ("vintage-bench".equals(mode)) { options.setEnabled(false); }
+             options.setRelease(BuildInfo.getVersionString());
+             options.setEnvironment(System.getProperty("os.name"));
+             options.setTag("Java Version", System.getProperty("java.version"));
+@@ -83,7 +84,12 @@ public final class Main {
+         //System.setProperty("sun.java2d.opengl", "True");
+ 
+         //setup GUI interface
+-        GuiBase.setInterface(new GuiDesktop());
++        GuiBase.setInterface(new GuiDesktop() {
++            @Override public String getAssetsDir() {
++                return "vintage-bench".equals(mode)
++                        ? System.getProperty("forge.vintage.assets", super.getAssetsDir()) : super.getAssetsDir();
++            }
++        });
+ 
+         //install our error handler
+         ExceptionHandler.registerErrorHandling();
+@@ -100,6 +106,10 @@ public final class Main {
+ 
+         // command line startup here
+         switch (mode) {
++            case "vintage-bench":
++                VintageBenchmark.run(args);
++                break;
++
+             case "sim":
+                 SimulateMatch.simulate(args);
+                 break;
+@@ -127,7 +137,7 @@ public final class Main {
+      * not a mode and only prints usage, so it is deliberately not listed here.
+      */
+     public static boolean isCommandLineMode(final String mode) {
+-        return "sim".equals(mode) || "parse".equals(mode) || "server".equals(mode);
++        return "vintage-bench".equals(mode) || "sim".equals(mode) || "parse".equals(mode) || "server".equals(mode);
+     }
+ 
+     @SuppressWarnings("deprecation")
+diff --git a/forge-gui-desktop/src/main/java/forge/view/VintageBenchmark.java b/forge-gui-desktop/src/main/java/forge/view/VintageBenchmark.java
+new file mode 100644
+index 00000000..a919d11d
+--- /dev/null
++++ b/forge-gui-desktop/src/main/java/forge/view/VintageBenchmark.java
+@@ -0,0 +1,89 @@
++package forge.view;
++
++import forge.StaticData;
++import forge.ai.LobbyPlayerAi;
++import forge.ai.PlayerControllerAi;
++import forge.deck.Deck;
++import forge.deck.VintageSolo;
++import forge.deck.VintageSolo.Archetype;
++import forge.deck.io.DeckSerializer;
++import forge.game.Game;
++import forge.game.GameRules;
++import forge.game.GameType;
++import forge.game.Match;
++import forge.game.player.Player;
++import forge.game.player.RegisteredPlayer;
++import forge.localinstance.properties.ForgeConstants;
++import forge.model.FModel;
++import forge.util.MyRandom;
++import java.io.File;
++import java.nio.file.Files;
++import java.nio.file.Path;
++import java.util.ArrayList;
++import java.util.List;
++import java.util.Random;
++
++/** One actual Forge game per process. The external runner owns timeout/error accounting. */
++public final class VintageBenchmark {
++    private VintageBenchmark() { }
++    public static void run(String[] args) {
++        if (args.length != 7) {
++            throw new IllegalArgumentException("vintage-bench INITIATIVE WORKSHOP specialist[-1/0/1] first[0/1] seed result.tsv");
++        }
++        Path output = Path.of(args[6]);
++        Game game = null;
++        try {
++            int specialist = Integer.parseInt(args[3]), first = Integer.parseInt(args[4]);
++            long seed = Long.parseLong(args[5]);
++            if (specialist < -1 || specialist > 1 || first < 0 || first > 1) { throw new IllegalArgumentException("Invalid player index"); }
++            FModel.initialize(null, null);
++            StaticData.instance().setFilteredHandsEnabled(false);
++            List<RegisteredPlayer> players = new ArrayList<>();
++            for (int index = 0; index < 2; index++) {
++                Archetype archetype = Archetype.valueOf(args[index + 1]);
++                Deck deck = DeckSerializer.fromFile(new File(ForgeConstants.RES_DIR + "vintage-solo/" + archetype.file + ".dck"));
++                if (deck == null || deck.getMain().countAll() != 60 || !FModel.getFormats().getVintage().isDeckLegal(deck)) {
++                    throw new IllegalStateException("Invalid deck " + archetype);
++                }
++                VintageSolo.configure(deck, archetype, index == specialist);
++                LobbyPlayerAi lobby = new LobbyPlayerAi("Bench" + index, null) {
++                    @Override public Player createIngamePlayer(Game g, int id) {
++                        Player player = new Player(getName(), g, id);
++                        player.setFirstController(new PlayerControllerAi(g, player, this) {
++                            @Override public Player chooseStartingPlayer(boolean isFirstGame) {
++                                return g.getPlayers().get(first);
++                            }
++                        });
++                        return player;
++                    }
++                };
++                lobby.setAiProfile("Default");
++                players.add(new RegisteredPlayer(deck).setPlayer(lobby));
++            }
++            GameRules rules = new GameRules(GameType.Constructed);
++            rules.setGamesPerMatch(1);
++            rules.setPlayForAnte(false);
++            rules.setAllowCheatShuffle(false);
++            rules.setAISideboardingEnabled(false);
++            Match match = new Match(rules, players, "Vintage benchmark");
++            MyRandom.setRandom(new Random(seed));
++            game = match.createGame();
++            game.setNoGUIUser();
++            match.startGame(game);
++            if (!game.isGameOver() || game.getOutcome() == null) { throw new IllegalStateException("Game returned without outcome"); }
++            int winner = game.getOutcome().isWinner(players.get(0)) ? 0 : game.getOutcome().isWinner(players.get(1)) ? 1 : -1;
++            Files.writeString(output, "COMPLETE\t" + winner + "\n");
++        } catch (Throwable ex) {
++            ex.printStackTrace();
++            try { Files.writeString(output, "ERROR\t" + ex.getClass().getName() + "\n"); }
++            catch (Exception writeFailure) { throw new RuntimeException(writeFailure); }
++        } finally {
++            if (game != null) {
++                StringBuilder log = new StringBuilder();
++                for (var entry : game.getGameLog().getAllEntries()) { log.append(entry).append('\n'); }
++                try { Files.writeString(Path.of(output + ".game.log"), log); }
++                catch (Exception ex) { ex.printStackTrace(); }
++            }
++        }
++    }
++}
+diff --git a/forge-gui-mobile/src/forge/Forge.java b/forge-gui-mobile/src/forge/Forge.java
+index 67332d2f..0c536616 100644
+--- a/forge-gui-mobile/src/forge/Forge.java
++++ b/forge-gui-mobile/src/forge/Forge.java
+@@ -379,7 +379,7 @@ public class Forge implements ApplicationListener {
+      */
+     public static void maybePromptForBulkCdnSync() {
+         // don't prompt if the game starts in adventure to prevent the prompt appearing on adventure loading screen
+-        if (isMobileAdventureMode)
++        if (GuiBase.isAndroid() || isMobileAdventureMode || FModel.getPreferences().getPrefBoolean(FPref.UI_DISABLE_CARD_IMAGES))
+             return;
+         if (!CdnUuidCache.shouldPromptForBulkSync()) {
+             return;
+@@ -405,9 +405,7 @@ public class Forge implements ApplicationListener {
+         isMobileAdventureMode = false;
+         MusicPlaylist.invalidateMusicPlaylist();
+         SoundSystem.instance.setBackgroundMusic(MusicPlaylist.MENUS);
+-        if (isLandscapeMode()) { //open preferred new game screen by default if landscape mode
+-            NewGameMenu.getPreferredScreen().open();
+-        }
++        forge.screens.vintage.VintageSoloScreen.show();
+         stopContinuousRendering(); //save power consumption by disabling continuous rendering once assets loaded
+     }
+ 
+@@ -468,6 +466,7 @@ public class Forge implements ApplicationListener {
+         destroyThis = false; //Allow back()
+         Gdx.input.setCatchKey(Keys.MENU, true);
+ 
++        selector = "Classic"; // Vintage Solo distribution: no Adventure/mode selector.
+         afterDBloaded = true;
+         //adjust height modifier
+         adjustHeightModifier(getScreenWidth(), getScreenHeight());
+diff --git a/forge-gui-mobile/src/forge/assets/AssetsDownloader.java b/forge-gui-mobile/src/forge/assets/AssetsDownloader.java
+index a7e3d864..e2a27a99 100644
+--- a/forge-gui-mobile/src/forge/assets/AssetsDownloader.java
++++ b/forge-gui-mobile/src/forge/assets/AssetsDownloader.java
+@@ -38,6 +38,12 @@ public class AssetsDownloader {
+     public static void checkForUpdates(boolean exited, Runnable runnable) {
+         if (exited)
+             return;
++        if (GuiBase.isAndroid() && Gdx.files.internal("vintage-res.version").exists()) {
++            // Installed by the Android launcher before skin/database loading. Never replace this fork
++            // with upstream auto-updates, which would lose its fixed roster and AI changes.
++            run(runnable);
++            return;
++        }
+         final String versionString = Forge.getDeviceAdapter().getVersionString();
+         Forge.getSplashScreen().getProgressBar().setDescription("Checking for updates...");
+         if (versionString.contains("GIT")) {
+diff --git a/forge-gui-mobile/src/forge/screens/home/HomeScreen.java b/forge-gui-mobile/src/forge/screens/home/HomeScreen.java
+index 0b8bc495..c3f8c19e 100644
+--- a/forge-gui-mobile/src/forge/screens/home/HomeScreen.java
++++ b/forge-gui-mobile/src/forge/screens/home/HomeScreen.java
+@@ -68,70 +68,9 @@ public class HomeScreen extends FScreen {
+     private HomeScreen() {
+         super((Header)null);
+ 
+-        addButton(Forge.getLocalizer().getMessage("lblNewGame"), e -> {
+-            activeButtonIndex = 0;
+-            Forge.lastButtonIndex = activeButtonIndex;
+-            NewGameMenu.getPreferredScreen().open();
+-        });
+-        addButton(Forge.getLocalizer().getMessage("lblLoadGame"), e -> {
+-            activeButtonIndex = 1;
+-            Forge.lastButtonIndex = activeButtonIndex;
+-            LoadGameMenu.getPreferredScreen().open();
+-        });
+-        addButton(Forge.getLocalizer().getMessage("lblPlayOnline"), e -> {
+-            activeButtonIndex = 2;
+-            Forge.lastButtonIndex = activeButtonIndex;
+-            OnlineScreen.Lobby.open();
+-        });
+-        addButton(Forge.getLocalizer().getMessage("lblDeckManager"), e -> {
+-            activeButtonIndex = 3;
+-            Forge.lastButtonIndex = activeButtonIndex;
+-            if (deckManager == null) {
+-                deckManager = new FDeckChooser(GameType.DeckManager, false, null) {
+-                    @Override
+-                    protected float doLandscapeLayout(float width, float height) {
+-                        //don't show header in landscape mode
+-                        getHeader().setBounds(0, 0, 0, 0);
+-                        doLayout(0, width, height);
+-                        return 0;
+-                    }
+-                };
+-                deckManager.setHeaderCaption(Forge.getLocalizer().getMessage("lblDeckManager"));
+-            }
+-            Forge.openScreen(deckManager);
+-        });
+-        addButton(Forge.getLocalizer().getMessage("lblAchievements"), e -> {
+-            activeButtonIndex = 4;
+-            Forge.lastButtonIndex = activeButtonIndex;
+-            AchievementsScreen.show();
+-        });
+-        addButton(Forge.getLocalizer().getMessage("lblSettings"), e -> {
+-            activeButtonIndex = 5;
+-            Forge.lastButtonIndex = activeButtonIndex;
+-            SettingsScreen.show(true);
+-        });
+-        addButton(Forge.getLocalizer().getMessage("lblHelp"), e -> FThreads.invokeInEdtLater(() -> {
+-            try {
+-                if (Forge.getDeviceAdapter().isConnectedToInternet()) {
+-                    FOptionPane.showOptionDialog("Join Discord option will open the invite link to join Forge Discord server. Forge Support option will open the Forge Support Channel.", "Choose option", FOptionPane.INFORMATION_ICON, List.of("Join Discord", "Forge Support"), -1, result -> {
+-                        switch (result) {
+-                            case 0:
+-                                Gdx.net.openURI("https://discord.gg/3v9JCVr");
+-                                break;
+-                            case 1:
+-                                Gdx.net.openURI("https://discord.com/channels/267367946135928833/692000787856883752");
+-                                break;
+-                            default:
+-                                break;
+-                        }
+-                    });
+-                } else {
+-                    FOptionPane.showErrorDialog("Internet Connection required to open Forge Discord server", "No Internet");
+-                }
+-            } catch (Exception e1) {
+-                e1.printStackTrace();
+-            }
+-        }));
++        addButton("Vintage Solo", e -> forge.screens.vintage.VintageSoloScreen.show());
++        addButton("О приложении", e -> FOptionPane.showMessageDialog(
++                "Vintage Solo — одиночный режим на движке Forge.\nForge: GPL-3.0. Не связан с Wizards of the Coast.", "Vintage Solo"));
+         baseButtonCount = buttons.size();
+     }
+ 
+@@ -147,17 +86,8 @@ public class HomeScreen extends FScreen {
+         QuestWorld = questWorld;
+     }
+ 
+-    public void openMenu(int index){
+-        if (index < 0)
+-            return; //menu on startup
+-        if (index == 2)
+-            OnlineScreen.Lobby.open();
+-        else if (index < 6)
+-            NewGameMenu.getPreferredScreen().open();
+-        else if (index == 6)
+-            QuestMenu.launchQuestMode(QuestMenu.LaunchReason.StartQuestMode, HomeScreen.instance.getQuestCommanderMode());
+-        else if (index == 7)
+-            ConquestMenu.launchPlanarConquest(ConquestMenu.LaunchReason.StartPlanarConquest);
++    public void openMenu(int index) {
++        // This distribution exposes only the fixed-roster single-player screen.
+     }
+ 
+     public boolean getQuestCommanderMode() {
+diff --git a/forge-gui-mobile/src/forge/screens/match/MatchScreen.java b/forge-gui-mobile/src/forge/screens/match/MatchScreen.java
+index 4aa40e3a..289e78b0 100644
+--- a/forge-gui-mobile/src/forge/screens/match/MatchScreen.java
++++ b/forge-gui-mobile/src/forge/screens/match/MatchScreen.java
+@@ -955,6 +955,13 @@ public class MatchScreen extends FScreen {
+         @Override
+         public void drawBackground(Graphics g) {
+             super.drawBackground(g);
++            // Own table artwork: no Arena assets and no remote playmat required.
++            if (!Forge.isMobileAdventureMode) {
++                g.fillRect(new com.badlogic.gdx.graphics.Color(0.035f, 0.085f, 0.09f, 1f), 0, 0, getWidth(), getHeight());
++                g.drawLine(1f, new com.badlogic.gdx.graphics.Color(0.55f, 0.43f, 0.25f, 0.7f),
++                        0, getHeight() / 2f, getWidth(), getHeight() / 2f);
++                return;
++            }
+             if (!FModel.getPreferences().getPrefBoolean(FPref.UI_MATCH_IMAGE_VISIBLE)) {
+                 if (!Forge.isMobileAdventureMode)
+                     if (!hasActivePlane())
+diff --git a/forge-gui-mobile/src/forge/screens/vintage/VintageSoloScreen.java b/forge-gui-mobile/src/forge/screens/vintage/VintageSoloScreen.java
+new file mode 100644
+index 00000000..703ddd7c
+--- /dev/null
++++ b/forge-gui-mobile/src/forge/screens/vintage/VintageSoloScreen.java
+@@ -0,0 +1,155 @@
++package forge.screens.vintage;
++
++import com.badlogic.gdx.graphics.Color;
++import com.badlogic.gdx.utils.Align;
++import forge.Forge;
++import forge.Graphics;
++import forge.assets.FSkinFont;
++import forge.deck.Deck;
++import forge.deck.VintageSolo;
++import forge.deck.VintageSolo.Archetype;
++import forge.deck.io.DeckSerializer;
++import forge.game.GameRules;
++import forge.game.GameType;
++import forge.game.player.RegisteredPlayer;
++import forge.gamemodes.match.HostedMatch;
++import forge.gui.FThreads;
++import forge.gui.GuiBase;
++import forge.localinstance.properties.ForgeConstants;
++import forge.localinstance.properties.ForgePreferences.FPref;
++import forge.model.FModel;
++import forge.player.GamePlayerUtil;
++import forge.screens.FScreen;
++import forge.screens.LoadingOverlay;
++import forge.toolbox.FButton;
++import forge.toolbox.FCheckBox;
++import forge.toolbox.FComboBox;
++import forge.toolbox.FLabel;
++import forge.toolbox.FOptionPane;
++import forge.toolbox.FTextArea;
++import forge.util.Utils;
++
++import java.io.File;
++import java.util.List;
++
++/** Fixed roster -> ordinary HostedMatch. All gameplay UI and rules are the existing Forge client. */
++public final class VintageSoloScreen extends FScreen {
++    private static VintageSoloScreen instance;
++    private final FLabel title = add(new FLabel.Builder().text("VINTAGE • SOLO")
++            .font(FSkinFont.get(26)).align(Align.center).build());
++    private final FLabel you = add(new FLabel.Builder().text("ВАША КОЛОДА").build());
++    private final FLabel opponent = add(new FLabel.Builder().text("КОЛОДА СОПЕРНИКА").build());
++    private final FComboBox<Archetype> humanDeck = add(new FComboBox<>());
++    private final FComboBox<Archetype> botDeck = add(new FComboBox<>());
++    private final FTextArea humanPlan = add(new FTextArea(false));
++    private final FTextArea botPlan = add(new FTextArea(false));
++    private final FCheckBox autoPass = add(new FCheckBox("Автопередача без действий", true));
++    private final FCheckBox textCards = add(new FCheckBox("Текстовые карты", true));
++    private final FButton start = add(new FButton("Начать партию"));
++    private final FButton help = add(new FButton("Управление"));
++    private boolean starting;
++
++    private VintageSoloScreen() {
++        super((Header) null);
++        humanDeck.setItems(Archetype.values(), Archetype.INITIATIVE);
++        botDeck.setItems(Archetype.values(), Archetype.OATH);
++        humanDeck.setChangedHandler(e -> updatePlans());
++        botDeck.setChangedHandler(e -> updatePlans());
++        start.setCommand(e -> startMatch());
++        help.setCommand(e -> FOptionPane.showMessageDialog(
++                "Долгое нажатие — увеличить карту. Нажмите на зону, чтобы посмотреть её.\n"
++                + "Выбирайте атакующих и блокирующих на поле. Кнопки подсказки передают приоритет.\n"
++                + "Меню уступки позволяет вернуть ручной контроль. После партии доступен журнал и его копирование.\n"
++                + "Специализированный бот пока проходит проверку; превосходство над Forge не подтверждено.", "Управление"));
++        updatePlans();
++    }
++    public static void show() {
++        if (instance == null) { instance = new VintageSoloScreen(); }
++        Forge.openScreen(instance);
++    }
++    private void updatePlans() {
++        humanPlan.setText(humanDeck.getSelectedItem().plan);
++        botPlan.setText(botDeck.getSelectedItem().plan);
++    }
++    public static Deck loadDeck(Archetype type, boolean specialist) {
++        File file = new File(ForgeConstants.RES_DIR + "vintage-solo/" + type.file + ".dck");
++        if (!file.isFile()) { throw new IllegalStateException("Отсутствует файл колоды: " + file); }
++        Deck deck = DeckSerializer.fromFile(file);
++        if (deck == null || deck.getMain().countAll() != 60) {
++            throw new IllegalStateException("Колода должна содержать ровно 60 карт: " + type.title);
++        }
++        String problem = GameType.Constructed.getDeckFormat().getDeckConformanceProblem(deck);
++        if (problem != null || !FModel.getFormats().getVintage().isDeckLegal(deck)) {
++            throw new IllegalStateException("Недопустимая колода Vintage: " + type.title + "\n" + (problem == null ? "Проверьте ограничения формата" : problem));
++        }
++        VintageSolo.configure(deck, type, specialist);
++        return deck;
++    }
++    private void startMatch() {
++        if (starting || Forge.isLoadingaMatch()) { return; }
++        starting = true;
++        start.setEnabled(false);
++        Archetype human = humanDeck.getSelectedItem();
++        Archetype bot = botDeck.getSelectedItem();
++        FModel.getPreferences().setPref(FPref.UI_DISABLE_CARD_IMAGES, textCards.isSelected());
++        FModel.getPreferences().setPref(FPref.YIELD_AUTO_PASS_NO_ACTIONS, autoPass.isSelected());
++        FModel.getPreferences().setPref(FPref.YIELD_SKIP_PHASE_DELAY, true);
++        FModel.getPreferences().setPref(FPref.YIELD_SKIP_RESOLVE_DELAY, true);
++        FModel.getPreferences().setPref(FPref.UI_SHOW_AUTOTAP_PREVIEW, true);
++        FModel.getPreferences().save();
++        // Parse/validate decks away from the rendering thread, like LobbyScreen.
++        FThreads.invokeInBackgroundThread(() -> {
++            try {
++                Deck hd = loadDeck(human, false);
++                Deck bd = loadDeck(bot, true);
++                FThreads.invokeInEdtLater(() -> LoadingOverlay.show("Подготовка стола", true, () -> {
++                    try {
++                        RegisteredPlayer hp = new RegisteredPlayer(hd).setPlayer(GamePlayerUtil.getGuiPlayer());
++                        RegisteredPlayer bp = new RegisteredPlayer(bd).setPlayer(GamePlayerUtil.createAiPlayer("Vintage Bot", "Default"));
++                        GameRules rules = new GameRules(GameType.Constructed);
++                        rules.setGamesPerMatch(1);
++                        rules.setPlayForAnte(false);
++                        rules.setAllowCheatShuffle(false);
++                        rules.setAISideboardingEnabled(false);
++                        forge.StaticData.instance().setFilteredHandsEnabled(false);
++                        HostedMatch match = GuiBase.getInterface().hostMatch();
++                        match.startMatch(rules, null, List.of(hp, bp), hp, GuiBase.getInterface().getNewGuiGame());
++                    } catch (Exception ex) {
++                        FOptionPane.showErrorDialog(ex.getMessage(), "Не удалось начать партию");
++                    } finally { starting = false; start.setEnabled(true); }
++                }));
++            } catch (Exception ex) {
++                FThreads.invokeInEdtLater(() -> {
++                    starting = false;
++                    start.setEnabled(true);
++                    FOptionPane.showErrorDialog(ex.getMessage(), "Ошибка колоды");
++                });
++            }
++        });
++    }
++    @Override protected void drawBackground(Graphics g) {
++        g.fillRect(new Color(0.035f, 0.075f, 0.08f, 1), 0, 0, getWidth(), getHeight());
++        g.drawLine(Utils.scale(2), new Color(0.67f, 0.52f, 0.29f, 1), getWidth() * .08f,
++                getHeight() * .2f, getWidth() * .92f, getHeight() * .2f);
++    }
++    @Override protected void doLayout(float startY, float width, float height) {
++        float pad = Utils.scale(16), gap = Utils.scale(16);
++        float col = (width - 2 * pad - gap) / 2;
++        float row = Math.min(Utils.AVG_FINGER_HEIGHT, height * .12f);
++        title.setBounds(pad, startY + pad, width - 2 * pad, height * .15f);
++        float y = startY + height * .23f;
++        you.setBounds(pad, y, col, row * .65f);
++        opponent.setBounds(pad + col + gap, y, col, row * .65f);
++        y += row * .75f;
++        humanDeck.setBounds(pad, y, col, row);
++        botDeck.setBounds(pad + col + gap, y, col, row);
++        y += row + gap * .5f;
++        humanPlan.setBounds(pad, y, col, row);
++        botPlan.setBounds(pad + col + gap, y, col, row);
++        y += row + gap * .5f;
++        autoPass.setBounds(pad, y, col, row);
++        textCards.setBounds(pad + col + gap, y, col, row);
++        start.setBounds(width * .3f, height - pad - row * 1.2f, width * .4f, row * 1.2f);
++        help.setBounds(pad, height - pad - row, col * .48f, row);
++    }
++}
+diff --git a/forge-gui/res/vintage-solo/LICENSE.txt b/forge-gui/res/vintage-solo/LICENSE.txt
+new file mode 100644
+index 00000000..e72bfdda
+--- /dev/null
++++ b/forge-gui/res/vintage-solo/LICENSE.txt
+@@ -0,0 +1,674 @@
++                    GNU GENERAL PUBLIC LICENSE
++                       Version 3, 29 June 2007
++
++ Copyright (C) 2007 Free Software Foundation, Inc. <https://fsf.org/>
++ Everyone is permitted to copy and distribute verbatim copies
++ of this license document, but changing it is not allowed.
++
++                            Preamble
++
++  The GNU General Public License is a free, copyleft license for
++software and other kinds of works.
++
++  The licenses for most software and other practical works are designed
++to take away your freedom to share and change the works.  By contrast,
++the GNU General Public License is intended to guarantee your freedom to
++share and change all versions of a program--to make sure it remains free
++software for all its users.  We, the Free Software Foundation, use the
++GNU General Public License for most of our software; it applies also to
++any other work released this way by its authors.  You can apply it to
++your programs, too.
++
++  When we speak of free software, we are referring to freedom, not
++price.  Our General Public Licenses are designed to make sure that you
++have the freedom to distribute copies of free software (and charge for
++them if you wish), that you receive source code or can get it if you
++want it, that you can change the software or use pieces of it in new
++free programs, and that you know you can do these things.
++
++  To protect your rights, we need to prevent others from denying you
++these rights or asking you to surrender the rights.  Therefore, you have
++certain responsibilities if you distribute copies of the software, or if
++you modify it: responsibilities to respect the freedom of others.
++
++  For example, if you distribute copies of such a program, whether
++gratis or for a fee, you must pass on to the recipients the same
++freedoms that you received.  You must make sure that they, too, receive
++or can get the source code.  And you must show them these terms so they
++know their rights.
++
++  Developers that use the GNU GPL protect your rights with two steps:
++(1) assert copyright on the software, and (2) offer you this License
++giving you legal permission to copy, distribute and/or modify it.
++
++  For the developers' and authors' protection, the GPL clearly explains
++that there is no warranty for this free software.  For both users' and
++authors' sake, the GPL requires that modified versions be marked as
++changed, so that their problems will not be attributed erroneously to
++authors of previous versions.
++
++  Some devices are designed to deny users access to install or run
++modified versions of the software inside them, although the manufacturer
++can do so.  This is fundamentally incompatible with the aim of
++protecting users' freedom to change the software.  The systematic
++pattern of such abuse occurs in the area of products for individuals to
++use, which is precisely where it is most unacceptable.  Therefore, we
++have designed this version of the GPL to prohibit the practice for those
++products.  If such problems arise substantially in other domains, we
++stand ready to extend this provision to those domains in future versions
++of the GPL, as needed to protect the freedom of users.
++
++  Finally, every program is threatened constantly by software patents.
++States should not allow patents to restrict development and use of
++software on general-purpose computers, but in those that do, we wish to
++avoid the special danger that patents applied to a free program could
++make it effectively proprietary.  To prevent this, the GPL assures that
++patents cannot be used to render the program non-free.
++
++  The precise terms and conditions for copying, distribution and
++modification follow.
++
++                       TERMS AND CONDITIONS
++
++  0. Definitions.
++
++  "This License" refers to version 3 of the GNU General Public License.
++
++  "Copyright" also means copyright-like laws that apply to other kinds of
++works, such as semiconductor masks.
++
++  "The Program" refers to any copyrightable work licensed under this
++License.  Each licensee is addressed as "you".  "Licensees" and
++"recipients" may be individuals or organizations.
++
++  To "modify" a work means to copy from or adapt all or part of the work
++in a fashion requiring copyright permission, other than the making of an
++exact copy.  The resulting work is called a "modified version" of the
++earlier work or a work "based on" the earlier work.
++
++  A "covered work" means either the unmodified Program or a work based
++on the Program.
++
++  To "propagate" a work means to do anything with it that, without
++permission, would make you directly or secondarily liable for
++infringement under applicable copyright law, except executing it on a
++computer or modifying a private copy.  Propagation includes copying,
++distribution (with or without modification), making available to the
++public, and in some countries other activities as well.
++
++  To "convey" a work means any kind of propagation that enables other
++parties to make or receive copies.  Mere interaction with a user through
++a computer network, with no transfer of a copy, is not conveying.
++
++  An interactive user interface displays "Appropriate Legal Notices"
++to the extent that it includes a convenient and prominently visible
++feature that (1) displays an appropriate copyright notice, and (2)
++tells the user that there is no warranty for the work (except to the
++extent that warranties are provided), that licensees may convey the
++work under this License, and how to view a copy of this License.  If
++the interface presents a list of user commands or options, such as a
++menu, a prominent item in the list meets this criterion.
++
++  1. Source Code.
++
++  The "source code" for a work means the preferred form of the work
++for making modifications to it.  "Object code" means any non-source
++form of a work.
++
++  A "Standard Interface" means an interface that either is an official
++standard defined by a recognized standards body, or, in the case of
++interfaces specified for a particular programming language, one that
++is widely used among developers working in that language.
++
++  The "System Libraries" of an executable work include anything, other
++than the work as a whole, that (a) is included in the normal form of
++packaging a Major Component, but which is not part of that Major
++Component, and (b) serves only to enable use of the work with that
++Major Component, or to implement a Standard Interface for which an
++implementation is available to the public in source code form.  A
++"Major Component", in this context, means a major essential component
++(kernel, window system, and so on) of the specific operating system
++(if any) on which the executable work runs, or a compiler used to
++produce the work, or an object code interpreter used to run it.
++
++  The "Corresponding Source" for a work in object code form means all
++the source code needed to generate, install, and (for an executable
++work) run the object code and to modify the work, including scripts to
++control those activities.  However, it does not include the work's
++System Libraries, or general-purpose tools or generally available free
++programs which are used unmodified in performing those activities but
++which are not part of the work.  For example, Corresponding Source
++includes interface definition files associated with source files for
++the work, and the source code for shared libraries and dynamically
++linked subprograms that the work is specifically designed to require,
++such as by intimate data communication or control flow between those
++subprograms and other parts of the work.
++
++  The Corresponding Source need not include anything that users
++can regenerate automatically from other parts of the Corresponding
++Source.
++
++  The Corresponding Source for a work in source code form is that
++same work.
++
++  2. Basic Permissions.
++
++  All rights granted under this License are granted for the term of
++copyright on the Program, and are irrevocable provided the stated
++conditions are met.  This License explicitly affirms your unlimited
++permission to run the unmodified Program.  The output from running a
++covered work is covered by this License only if the output, given its
++content, constitutes a covered work.  This License acknowledges your
++rights of fair use or other equivalent, as provided by copyright law.
++
++  You may make, run and propagate covered works that you do not
++convey, without conditions so long as your license otherwise remains
++in force.  You may convey covered works to others for the sole purpose
++of having them make modifications exclusively for you, or provide you
++with facilities for running those works, provided that you comply with
++the terms of this License in conveying all material for which you do
++not control copyright.  Those thus making or running the covered works
++for you must do so exclusively on your behalf, under your direction
++and control, on terms that prohibit them from making any copies of
++your copyrighted material outside their relationship with you.
++
++  Conveying under any other circumstances is permitted solely under
++the conditions stated below.  Sublicensing is not allowed; section 10
++makes it unnecessary.
++
++  3. Protecting Users' Legal Rights From Anti-Circumvention Law.
++
++  No covered work shall be deemed part of an effective technological
++measure under any applicable law fulfilling obligations under article
++11 of the WIPO copyright treaty adopted on 20 December 1996, or
++similar laws prohibiting or restricting circumvention of such
++measures.
++
++  When you convey a covered work, you waive any legal power to forbid
++circumvention of technological measures to the extent such circumvention
++is effected by exercising rights under this License with respect to
++the covered work, and you disclaim any intention to limit operation or
++modification of the work as a means of enforcing, against the work's
++users, your or third parties' legal rights to forbid circumvention of
++technological measures.
++
++  4. Conveying Verbatim Copies.
++
++  You may convey verbatim copies of the Program's source code as you
++receive it, in any medium, provided that you conspicuously and
++appropriately publish on each copy an appropriate copyright notice;
++keep intact all notices stating that this License and any
++non-permissive terms added in accord with section 7 apply to the code;
++keep intact all notices of the absence of any warranty; and give all
++recipients a copy of this License along with the Program.
++
++  You may charge any price or no price for each copy that you convey,
++and you may offer support or warranty protection for a fee.
++
++  5. Conveying Modified Source Versions.
++
++  You may convey a work based on the Program, or the modifications to
++produce it from the Program, in the form of source code under the
++terms of section 4, provided that you also meet all of these conditions:
++
++    a) The work must carry prominent notices stating that you modified
++    it, and giving a relevant date.
++
++    b) The work must carry prominent notices stating that it is
++    released under this License and any conditions added under section
++    7.  This requirement modifies the requirement in section 4 to
++    "keep intact all notices".
++
++    c) You must license the entire work, as a whole, under this
++    License to anyone who comes into possession of a copy.  This
++    License will therefore apply, along with any applicable section 7
++    additional terms, to the whole of the work, and all its parts,
++    regardless of how they are packaged.  This License gives no
++    permission to license the work in any other way, but it does not
++    invalidate such permission if you have separately received it.
++
++    d) If the work has interactive user interfaces, each must display
++    Appropriate Legal Notices; however, if the Program has interactive
++    interfaces that do not display Appropriate Legal Notices, your
++    work need not make them do so.
++
++  A compilation of a covered work with other separate and independent
++works, which are not by their nature extensions of the covered work,
++and which are not combined with it such as to form a larger program,
++in or on a volume of a storage or distribution medium, is called an
++"aggregate" if the compilation and its resulting copyright are not
++used to limit the access or legal rights of the compilation's users
++beyond what the individual works permit.  Inclusion of a covered work
++in an aggregate does not cause this License to apply to the other
++parts of the aggregate.
++
++  6. Conveying Non-Source Forms.
++
++  You may convey a covered work in object code form under the terms
++of sections 4 and 5, provided that you also convey the
++machine-readable Corresponding Source under the terms of this License,
++in one of these ways:
++
++    a) Convey the object code in, or embodied in, a physical product
++    (including a physical distribution medium), accompanied by the
++    Corresponding Source fixed on a durable physical medium
++    customarily used for software interchange.
++
++    b) Convey the object code in, or embodied in, a physical product
++    (including a physical distribution medium), accompanied by a
++    written offer, valid for at least three years and valid for as
++    long as you offer spare parts or customer support for that product
++    model, to give anyone who possesses the object code either (1) a
++    copy of the Corresponding Source for all the software in the
++    product that is covered by this License, on a durable physical
++    medium customarily used for software interchange, for a price no
++    more than your reasonable cost of physically performing this
++    conveying of source, or (2) access to copy the
++    Corresponding Source from a network server at no charge.
++
++    c) Convey individual copies of the object code with a copy of the
++    written offer to provide the Corresponding Source.  This
++    alternative is allowed only occasionally and noncommercially, and
++    only if you received the object code with such an offer, in accord
++    with subsection 6b.
++
++    d) Convey the object code by offering access from a designated
++    place (gratis or for a charge), and offer equivalent access to the
++    Corresponding Source in the same way through the same place at no
++    further charge.  You need not require recipients to copy the
++    Corresponding Source along with the object code.  If the place to
++    copy the object code is a network server, the Corresponding Source
++    may be on a different server (operated by you or a third party)
++    that supports equivalent copying facilities, provided you maintain
++    clear directions next to the object code saying where to find the
++    Corresponding Source.  Regardless of what server hosts the
++    Corresponding Source, you remain obligated to ensure that it is
++    available for as long as needed to satisfy these requirements.
++
++    e) Convey the object code using peer-to-peer transmission, provided
++    you inform other peers where the object code and Corresponding
++    Source of the work are being offered to the general public at no
++    charge under subsection 6d.
++
++  A separable portion of the object code, whose source code is excluded
++from the Corresponding Source as a System Library, need not be
++included in conveying the object code work.
++
++  A "User Product" is either (1) a "consumer product", which means any
++tangible personal property which is normally used for personal, family,
++or household purposes, or (2) anything designed or sold for incorporation
++into a dwelling.  In determining whether a product is a consumer product,
++doubtful cases shall be resolved in favor of coverage.  For a particular
++product received by a particular user, "normally used" refers to a
++typical or common use of that class of product, regardless of the status
++of the particular user or of the way in which the particular user
++actually uses, or expects or is expected to use, the product.  A product
++is a consumer product regardless of whether the product has substantial
++commercial, industrial or non-consumer uses, unless such uses represent
++the only significant mode of use of the product.
++
++  "Installation Information" for a User Product means any methods,
++procedures, authorization keys, or other information required to install
++and execute modified versions of a covered work in that User Product from
++a modified version of its Corresponding Source.  The information must
++suffice to ensure that the continued functioning of the modified object
++code is in no case prevented or interfered with solely because
++modification has been made.
++
++  If you convey an object code work under this section in, or with, or
++specifically for use in, a User Product, and the conveying occurs as
++part of a transaction in which the right of possession and use of the
++User Product is transferred to the recipient in perpetuity or for a
++fixed term (regardless of how the transaction is characterized), the
++Corresponding Source conveyed under this section must be accompanied
++by the Installation Information.  But this requirement does not apply
++if neither you nor any third party retains the ability to install
++modified object code on the User Product (for example, the work has
++been installed in ROM).
++
++  The requirement to provide Installation Information does not include a
++requirement to continue to provide support service, warranty, or updates
++for a work that has been modified or installed by the recipient, or for
++the User Product in which it has been modified or installed.  Access to a
++network may be denied when the modification itself materially and
++adversely affects the operation of the network or violates the rules and
++protocols for communication across the network.
++
++  Corresponding Source conveyed, and Installation Information provided,
++in accord with this section must be in a format that is publicly
++documented (and with an implementation available to the public in
++source code form), and must require no special password or key for
++unpacking, reading or copying.
++
++  7. Additional Terms.
++
++  "Additional permissions" are terms that supplement the terms of this
++License by making exceptions from one or more of its conditions.
++Additional permissions that are applicable to the entire Program shall
++be treated as though they were included in this License, to the extent
++that they are valid under applicable law.  If additional permissions
++apply only to part of the Program, that part may be used separately
++under those permissions, but the entire Program remains governed by
++this License without regard to the additional permissions.
++
++  When you convey a copy of a covered work, you may at your option
++remove any additional permissions from that copy, or from any part of
++it.  (Additional permissions may be written to require their own
++removal in certain cases when you modify the work.)  You may place
++additional permissions on material, added by you to a covered work,
++for which you have or can give appropriate copyright permission.
++
++  Notwithstanding any other provision of this License, for material you
++add to a covered work, you may (if authorized by the copyright holders of
++that material) supplement the terms of this License with terms:
++
++    a) Disclaiming warranty or limiting liability differently from the
++    terms of sections 15 and 16 of this License; or
++
++    b) Requiring preservation of specified reasonable legal notices or
++    author attributions in that material or in the Appropriate Legal
++    Notices displayed by works containing it; or
++
++    c) Prohibiting misrepresentation of the origin of that material, or
++    requiring that modified versions of such material be marked in
++    reasonable ways as different from the original version; or
++
++    d) Limiting the use for publicity purposes of names of licensors or
++    authors of the material; or
++
++    e) Declining to grant rights under trademark law for use of some
++    trade names, trademarks, or service marks; or
++
++    f) Requiring indemnification of licensors and authors of that
++    material by anyone who conveys the material (or modified versions of
++    it) with contractual assumptions of liability to the recipient, for
++    any liability that these contractual assumptions directly impose on
++    those licensors and authors.
++
++  All other non-permissive additional terms are considered "further
++restrictions" within the meaning of section 10.  If the Program as you
++received it, or any part of it, contains a notice stating that it is
++governed by this License along with a term that is a further
++restriction, you may remove that term.  If a license document contains
++a further restriction but permits relicensing or conveying under this
++License, you may add to a covered work material governed by the terms
++of that license document, provided that the further restriction does
++not survive such relicensing or conveying.
++
++  If you add terms to a covered work in accord with this section, you
++must place, in the relevant source files, a statement of the
++additional terms that apply to those files, or a notice indicating
++where to find the applicable terms.
++
++  Additional terms, permissive or non-permissive, may be stated in the
++form of a separately written license, or stated as exceptions;
++the above requirements apply either way.
++
++  8. Termination.
++
++  You may not propagate or modify a covered work except as expressly
++provided under this License.  Any attempt otherwise to propagate or
++modify it is void, and will automatically terminate your rights under
++this License (including any patent licenses granted under the third
++paragraph of section 11).
++
++  However, if you cease all violation of this License, then your
++license from a particular copyright holder is reinstated (a)
++provisionally, unless and until the copyright holder explicitly and
++finally terminates your license, and (b) permanently, if the copyright
++holder fails to notify you of the violation by some reasonable means
++prior to 60 days after the cessation.
++
++  Moreover, your license from a particular copyright holder is
++reinstated permanently if the copyright holder notifies you of the
++violation by some reasonable means, this is the first time you have
++received notice of violation of this License (for any work) from that
++copyright holder, and you cure the violation prior to 30 days after
++your receipt of the notice.
++
++  Termination of your rights under this section does not terminate the
++licenses of parties who have received copies or rights from you under
++this License.  If your rights have been terminated and not permanently
++reinstated, you do not qualify to receive new licenses for the same
++material under section 10.
++
++  9. Acceptance Not Required for Having Copies.
++
++  You are not required to accept this License in order to receive or
++run a copy of the Program.  Ancillary propagation of a covered work
++occurring solely as a consequence of using peer-to-peer transmission
++to receive a copy likewise does not require acceptance.  However,
++nothing other than this License grants you permission to propagate or
++modify any covered work.  These actions infringe copyright if you do
++not accept this License.  Therefore, by modifying or propagating a
++covered work, you indicate your acceptance of this License to do so.
++
++  10. Automatic Licensing of Downstream Recipients.
++
++  Each time you convey a covered work, the recipient automatically
++receives a license from the original licensors, to run, modify and
++propagate that work, subject to this License.  You are not responsible
++for enforcing compliance by third parties with this License.
++
++  An "entity transaction" is a transaction transferring control of an
++organization, or substantially all assets of one, or subdividing an
++organization, or merging organizations.  If propagation of a covered
++work results from an entity transaction, each party to that
++transaction who receives a copy of the work also receives whatever
++licenses to the work the party's predecessor in interest had or could
++give under the previous paragraph, plus a right to possession of the
++Corresponding Source of the work from the predecessor in interest, if
++the predecessor has it or can get it with reasonable efforts.
++
++  You may not impose any further restrictions on the exercise of the
++rights granted or affirmed under this License.  For example, you may
++not impose a license fee, royalty, or other charge for exercise of
++rights granted under this License, and you may not initiate litigation
++(including a cross-claim or counterclaim in a lawsuit) alleging that
++any patent claim is infringed by making, using, selling, offering for
++sale, or importing the Program or any portion of it.
++
++  11. Patents.
++
++  A "contributor" is a copyright holder who authorizes use under this
++License of the Program or a work on which the Program is based.  The
++work thus licensed is called the contributor's "contributor version".
++
++  A contributor's "essential patent claims" are all patent claims
++owned or controlled by the contributor, whether already acquired or
++hereafter acquired, that would be infringed by some manner, permitted
++by this License, of making, using, or selling its contributor version,
++but do not include claims that would be infringed only as a
++consequence of further modification of the contributor version.  For
++purposes of this definition, "control" includes the right to grant
++patent sublicenses in a manner consistent with the requirements of
++this License.
++
++  Each contributor grants you a non-exclusive, worldwide, royalty-free
++patent license under the contributor's essential patent claims, to
++make, use, sell, offer for sale, import and otherwise run, modify and
++propagate the contents of its contributor version.
++
++  In the following three paragraphs, a "patent license" is any express
++agreement or commitment, however denominated, not to enforce a patent
++(such as an express permission to practice a patent or covenant not to
++sue for patent infringement).  To "grant" such a patent license to a
++party means to make such an agreement or commitment not to enforce a
++patent against the party.
++
++  If you convey a covered work, knowingly relying on a patent license,
++and the Corresponding Source of the work is not available for anyone
++to copy, free of charge and under the terms of this License, through a
++publicly available network server or other readily accessible means,
++then you must either (1) cause the Corresponding Source to be so
++available, or (2) arrange to deprive yourself of the benefit of the
++patent license for this particular work, or (3) arrange, in a manner
++consistent with the requirements of this License, to extend the patent
++license to downstream recipients.  "Knowingly relying" means you have
++actual knowledge that, but for the patent license, your conveying the
++covered work in a country, or your recipient's use of the covered work
++in a country, would infringe one or more identifiable patents in that
++country that you have reason to believe are valid.
++
++  If, pursuant to or in connection with a single transaction or
++arrangement, you convey, or propagate by procuring conveyance of, a
++covered work, and grant a patent license to some of the parties
++receiving the covered work authorizing them to use, propagate, modify
++or convey a specific copy of the covered work, then the patent license
++you grant is automatically extended to all recipients of the covered
++work and works based on it.
++
++  A patent license is "discriminatory" if it does not include within
++the scope of its coverage, prohibits the exercise of, or is
++conditioned on the non-exercise of one or more of the rights that are
++specifically granted under this License.  You may not convey a covered
++work if you are a party to an arrangement with a third party that is
++in the business of distributing software, under which you make payment
++to the third party based on the extent of your activity of conveying
++the work, and under which the third party grants, to any of the
++parties who would receive the covered work from you, a discriminatory
++patent license (a) in connection with copies of the covered work
++conveyed by you (or copies made from those copies), or (b) primarily
++for and in connection with specific products or compilations that
++contain the covered work, unless you entered into that arrangement,
++or that patent license was granted, prior to 28 March 2007.
++
++  Nothing in this License shall be construed as excluding or limiting
++any implied license or other defenses to infringement that may
++otherwise be available to you under applicable patent law.
++
++  12. No Surrender of Others' Freedom.
++
++  If conditions are imposed on you (whether by court order, agreement or
++otherwise) that contradict the conditions of this License, they do not
++excuse you from the conditions of this License.  If you cannot convey a
++covered work so as to satisfy simultaneously your obligations under this
++License and any other pertinent obligations, then as a consequence you may
++not convey it at all.  For example, if you agree to terms that obligate you
++to collect a royalty for further conveying from those to whom you convey
++the Program, the only way you could satisfy both those terms and this
++License would be to refrain entirely from conveying the Program.
++
++  13. Use with the GNU Affero General Public License.
++
++  Notwithstanding any other provision of this License, you have
++permission to link or combine any covered work with a work licensed
++under version 3 of the GNU Affero General Public License into a single
++combined work, and to convey the resulting work.  The terms of this
++License will continue to apply to the part which is the covered work,
++but the special requirements of the GNU Affero General Public License,
++section 13, concerning interaction through a network will apply to the
++combination as such.
++
++  14. Revised Versions of this License.
++
++  The Free Software Foundation may publish revised and/or new versions of
++the GNU General Public License from time to time.  Such new versions will
++be similar in spirit to the present version, but may differ in detail to
++address new problems or concerns.
++
++  Each version is given a distinguishing version number.  If the
++Program specifies that a certain numbered version of the GNU General
++Public License "or any later version" applies to it, you have the
++option of following the terms and conditions either of that numbered
++version or of any later version published by the Free Software
++Foundation.  If the Program does not specify a version number of the
++GNU General Public License, you may choose any version ever published
++by the Free Software Foundation.
++
++  If the Program specifies that a proxy can decide which future
++versions of the GNU General Public License can be used, that proxy's
++public statement of acceptance of a version permanently authorizes you
++to choose that version for the Program.
++
++  Later license versions may give you additional or different
++permissions.  However, no additional obligations are imposed on any
++author or copyright holder as a result of your choosing to follow a
++later version.
++
++  15. Disclaimer of Warranty.
++
++  THERE IS NO WARRANTY FOR THE PROGRAM, TO THE EXTENT PERMITTED BY
++APPLICABLE LAW.  EXCEPT WHEN OTHERWISE STATED IN WRITING THE COPYRIGHT
++HOLDERS AND/OR OTHER PARTIES PROVIDE THE PROGRAM "AS IS" WITHOUT WARRANTY
++OF ANY KIND, EITHER EXPRESSED OR IMPLIED, INCLUDING, BUT NOT LIMITED TO,
++THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
++PURPOSE.  THE ENTIRE RISK AS TO THE QUALITY AND PERFORMANCE OF THE PROGRAM
++IS WITH YOU.  SHOULD THE PROGRAM PROVE DEFECTIVE, YOU ASSUME THE COST OF
++ALL NECESSARY SERVICING, REPAIR OR CORRECTION.
++
++  16. Limitation of Liability.
++
++  IN NO EVENT UNLESS REQUIRED BY APPLICABLE LAW OR AGREED TO IN WRITING
++WILL ANY COPYRIGHT HOLDER, OR ANY OTHER PARTY WHO MODIFIES AND/OR CONVEYS
++THE PROGRAM AS PERMITTED ABOVE, BE LIABLE TO YOU FOR DAMAGES, INCLUDING ANY
++GENERAL, SPECIAL, INCIDENTAL OR CONSEQUENTIAL DAMAGES ARISING OUT OF THE
++USE OR INABILITY TO USE THE PROGRAM (INCLUDING BUT NOT LIMITED TO LOSS OF
++DATA OR DATA BEING RENDERED INACCURATE OR LOSSES SUSTAINED BY YOU OR THIRD
++PARTIES OR A FAILURE OF THE PROGRAM TO OPERATE WITH ANY OTHER PROGRAMS),
++EVEN IF SUCH HOLDER OR OTHER PARTY HAS BEEN ADVISED OF THE POSSIBILITY OF
++SUCH DAMAGES.
++
++  17. Interpretation of Sections 15 and 16.
++
++  If the disclaimer of warranty and limitation of liability provided
++above cannot be given local legal effect according to their terms,
++reviewing courts shall apply local law that most closely approximates
++an absolute waiver of all civil liability in connection with the
++Program, unless a warranty or assumption of liability accompanies a
++copy of the Program in return for a fee.
++
++                     END OF TERMS AND CONDITIONS
++
++            How to Apply These Terms to Your New Programs
++
++  If you develop a new program, and you want it to be of the greatest
++possible use to the public, the best way to achieve this is to make it
++free software which everyone can redistribute and change under these terms.
++
++  To do so, attach the following notices to the program.  It is safest
++to attach them to the start of each source file to most effectively
++state the exclusion of warranty; and each file should have at least
++the "copyright" line and a pointer to where the full notice is found.
++
++    <one line to give the program's name and a brief idea of what it does.>
++    Copyright (C) <year>  <name of author>
++
++    This program is free software: you can redistribute it and/or modify
++    it under the terms of the GNU General Public License as published by
++    the Free Software Foundation, either version 3 of the License, or
++    (at your option) any later version.
++
++    This program is distributed in the hope that it will be useful,
++    but WITHOUT ANY WARRANTY; without even the implied warranty of
++    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++    GNU General Public License for more details.
++
++    You should have received a copy of the GNU General Public License
++    along with this program.  If not, see <https://www.gnu.org/licenses/>.
++
++Also add information on how to contact you by electronic and paper mail.
++
++  If the program does terminal interaction, make it output a short
++notice like this when it starts in an interactive mode:
++
++    <program>  Copyright (C) <year>  <name of author>
++    This program comes with ABSOLUTELY NO WARRANTY; for details type `show w'.
++    This is free software, and you are welcome to redistribute it
++    under certain conditions; type `show c' for details.
++
++The hypothetical commands `show w' and `show c' should show the appropriate
++parts of the General Public License.  Of course, your program's commands
++might be different; for a GUI interface, you would use an "about box".
++
++  You should also get your employer (if you work as a programmer) or school,
++if any, to sign a "copyright disclaimer" for the program, if necessary.
++For more information on this, and how to apply and follow the GNU GPL, see
++<https://www.gnu.org/licenses/>.
++
++  The GNU General Public License does not permit incorporating your program
++into proprietary programs.  If your program is a subroutine library, you
++may consider it more useful to permit linking proprietary applications with
++the library.  If this is what you want to do, use the GNU Lesser General
++Public License instead of this License.  But first, please read
++<https://www.gnu.org/licenses/why-not-lgpl.html>.
+\ No newline at end of file
+diff --git a/forge-gui/res/vintage-solo/SOURCES.md b/forge-gui/res/vintage-solo/SOURCES.md
+new file mode 100644
+index 00000000..4d0c2c48
+--- /dev/null
++++ b/forge-gui/res/vintage-solo/SOURCES.md
+@@ -0,0 +1,32 @@
++# Vintage Solo roster
++
++Checked 2026-09-08 against Forge ce5b0dbf17733847929e990c77274893223e1fa6.
++Each .dck contains exactly the source's 60-card main deck. Sideboards omitted.
++
++| File | Published list | Source |
++|---|---|---|
++| initiative.dck | Mono-White Initiative, Aetherhub, updated 2025-08-14 | https://aetherhub.com/Deck/mono-white-initiative-1350637 |
++| workshop.dck | WWolf, Vintage League, 2024-09-22, 5–0 | https://www.mtggoldfish.com/deck/download/6650070 |
++| oath.dck | Wesal, MTGO Challenge 32, 2026-09-03, 3–4 | https://mtgtop8.com/event?d=886421&e=90433&f=VI |
++
++Vintage restriction reference: https://magic.wizards.com/en/banned-restricted-list
++The relevant one-copy restrictions agree with the pinned Forge Vintage format.
++These are historical real lists, not a claim of the best current metagame choices.
++No banned cards from that list occur in these decks; all restricted inclusions are singletons.
++
++`python3 tools/vintage-solo/check.py` checks 60 cards, script existence and
++counts against the pinned Forge banned/restricted data. The report lists the
++script path for every card. It is NOT a test of correct runtime resolution.
++The actual selection screen also calls Forge's deck-conformance and Vintage
++legality validators before creating HostedMatch.
++
++Forge's existing scripts include Oath/Atraxa, initiative/Undercity, Workshop
++restricted mana, Sphere/Trinisphere, MDFCs and Urza's Saga. None of the selected
++scripts has `RemAIDeck:True`. That flag's absence does NOT prove strong AI support.
++Full-game interaction testing remains outstanding; no archetype has yet been
++replaced on the basis of measured runtime failure.
++
++This modified distribution retains Forge's GPL-3.0 license and copyright notices.
++See LICENSE.txt. No MTG Arena client assets were imported. Text-card rendering
++uses the existing Forge renderer. MTG names and card rules retain their respective
++rights; this is an unofficial personal-use project.
+diff --git a/forge-gui/res/vintage-solo/initiative.dck b/forge-gui/res/vintage-solo/initiative.dck
+new file mode 100644
+index 00000000..0038d012
+--- /dev/null
++++ b/forge-gui/res/vintage-solo/initiative.dck
+@@ -0,0 +1,29 @@
++[metadata]
++Name=Vintage Solo - Mono-White Initiative
++Source URL=https://aetherhub.com/Deck/mono-white-initiative-1350637
++[Main]
++4 Chancellor of the Annex
++4 Archon of Emeria
++4 White Plume Adventurer
++4 Seasoned Dungeoneer
++4 Anointed Peacekeeper
++4 Witch Enchanter
++4 Clarion Conqueror
++1 Black Lotus
++1 Mana Crypt
++1 Mox Emerald
++1 Mox Sapphire
++1 Mox Pearl
++1 Mox Jet
++1 Mox Ruby
++1 Chalice of the Void
++1 Sol Ring
++1 Vexing Bauble
++4 Chrome Mox
++2 Swords to Plowshares
++1 Karakas
++1 Strip Mine
++2 Plains
++4 Cavern of Souls
++4 Wasteland
++4 Ancient Tomb
+diff --git a/forge-gui/res/vintage-solo/oath.dck b/forge-gui/res/vintage-solo/oath.dck
+new file mode 100644
+index 00000000..3ef8be63
+--- /dev/null
++++ b/forge-gui/res/vintage-solo/oath.dck
+@@ -0,0 +1,38 @@
++[metadata]
++Name=Vintage Solo - Oath of Druids
++Source URL=https://mtgtop8.com/event?d=886421&e=90433&f=VI
++[Main]
++2 Boseiju, Who Endures
++2 Forbidden Orchard
++1 Hedge Maze
++2 Misty Rainforest
++1 Polluted Delta
++2 Scalding Tarn
++1 Strip Mine
++1 Thundering Falls
++2 Tropical Island
++2 Volcanic Island
++4 Wasteland
++2 Atraxa, Grand Unifier
++1 Ancestral Recall
++1 Brainstorm
++1 Dig Through Time
++2 Force of Negation
++4 Force of Will
++1 Gaea's Blessing
++1 Gitaxian Probe
++2 Lórien Revealed
++1 Mental Misstep
++2 Mindbreak Trap
++4 Stock Up
++1 Time Walk
++1 Treasure Cruise
++1 Black Lotus
++1 Mox Emerald
++1 Mox Ruby
++1 Mox Sapphire
++3 Null Rod
++4 Oath of Druids
++2 Oko, Thief of Crowns
++1 Vexing Bauble
++2 Wrenn and Six
+diff --git a/forge-gui/res/vintage-solo/workshop.dck b/forge-gui/res/vintage-solo/workshop.dck
+new file mode 100644
+index 00000000..f3f05217
+--- /dev/null
++++ b/forge-gui/res/vintage-solo/workshop.dck
+@@ -0,0 +1,32 @@
++[metadata]
++Name=Vintage Solo - Workshop Aggro
++Source URL=https://www.mtggoldfish.com/deck/download/6650070
++[Main]
++4 Ancient Tomb
++4 Arcbound Ravager
++1 Black Lotus
++1 Chalice of the Void
++4 Foundry Inspector
++1 Hangarback Walker
++1 Lodestone Golem
++1 Mana Crypt
++3 Mishra's Factory
++4 Mishra's Workshop
++1 Mox Emerald
++1 Mox Jet
++1 Mox Pearl
++1 Mox Ruby
++1 Mox Sapphire
++4 Phyrexian Revoker
++1 Sol Ring
++4 Sphere of Resistance
++4 Steel Overseer
++4 Stonecoil Serpent
++1 Strip Mine
++1 Thorn of Amethyst
++1 Tolarian Academy
++1 Trinisphere
++1 Urza's Saga
++1 Vexing Bauble
++4 Walking Ballista
++4 Wasteland
+diff --git a/tools/vintage-solo/README.md b/tools/vintage-solo/README.md
+new file mode 100644
+index 00000000..3d8e4152
+--- /dev/null
++++ b/tools/vintage-solo/README.md
+@@ -0,0 +1,210 @@
++# Vintage Solo: сборка и проверка
++
++Это незавершённый форк Forge, не проверенный Android-релиз. База:
++`ce5b0dbf17733847929e990c77274893223e1fa6`. Полные результаты локальных проверок:
++`reports/local-checks.json`. Реальные партии: **0**. Собранные APK: **0**.
++
++## Локальная сборка без apt / администратора
++
++Нужны Linux x86_64, JDK 17, Python 3.11+, bash, curl, tar, unzip; Xvfb для сборки,
++если среда без дисплея. Скрипт не устанавливает системные пакеты.
++Прочитайте условия Android SDK перед установкой и принятием лицензий.
++
++```bash
++cd forge
++export JAVA_HOME=/absolute/path/to/jdk-17
++export PATH="$JAVA_HOME/bin:$PATH"
++ACCEPT_ANDROID_SDK_LICENSES=yes bash tools/vintage-solo/bootstrap.sh
++source .vintage-tools/env.sh
++xvfb-run -a bash tools/vintage-solo/build.sh
++python3 tools/vintage-solo/check_apk.py
++```
++
++Если дисплей уже есть: `bash tools/vintage-solo/build.sh` без xvfb-run.
++Если зависимости уже установлены, bootstrap можно пропустить: укажите
++ANDROID_SDK_ROOT и Maven 3.8.1 в PATH. Плагин Forge Android Maven 4.6.2
++должен находиться в локальном Maven repository.
++
++Фиксированы Maven 3.8.1, Android CLI 11076708 (12.0), platform 35,
++build-tools 35.0.0 и Android Maven plugin 4.6.2; JDK — ветка 17.
++Это воспроизводимая процедура, не гарантия побитового совпадения APK:
++upstream использует timestamps, часть инструментов/транзитивных зависимостей
++и platform-tools может обновляться. Maven archive проверяется по официальному
++SHA-512; Android CLI и Forge plugin скачиваются с перечисленных ниже HTTPS-адресов.
++
++`build.sh` запускает локальные проверки, собирает ZIP всех ресурсов и обычный
++Maven reactor с clean, затем upstream-профиль android-test-build. Он подписывает APK
++встроенным отладочным ключом uber-apk-signer. Для личной установки; ключ не
++является секретным release-ключом. Результаты: `forge-gui-android/target/`.
++`check_apk.py` проверяет подпись, package id, launcher, DEX, LibGDX native library,
++целостность вложенного ZIP и соответствие всем ресурсам текущих исходников.
++Только прошедший проверки APK копируется в `dist/vintage-solo/vintage-solo.apk`,
++рядом сохраняются SHA256SUMS и verification.txt. Проверка НЕ подтверждает запуск.
++
++## GitHub Actions
++
++Workflow сохранён: `.github/workflows/vintage-android.yml` (ручной запуск или push в ветку `codex/vintage-apk`).
++В своём форке разместите **все изменённые файлы**, включая новые файлы из архива,
++и откройте Actions → Vintage Solo APK → Run workflow. Для появления ручного
++workflow он должен быть в default branch. Workflow сам не публикует релиз и
++не требует ключей подписи; `contents: read`. Его запуск в этой среде не выполнен.
++На ubuntu-24.04 используется имеющийся Xvfb; если образ его уберёт, сборка
++останавливается, не пытаясь установить пакеты через sudo/apt.
++
++После успешной сборки откройте Actions → Vintage Solo APK → нужный зелёный
++запуск → раздел Artifacts внизу → `vintage-solo-apk`. Распакуйте скачанный ZIP
++и установите `vintage-solo.apk`. Этот artifact содержит только проверенный APK,
++SHA256SUMS и verification.txt. `vintage-solo-diagnostics` содержит логи, в том
++числе при неуспешной сборке. Для проверки через adb:
++
++```bash
++adb install -r /path/to/signed.apk
++adb shell am start -W -n forge.vintage.solo/forge.app.Launcher
++adb logcat -d > launch.log
++```
++
++Проверьте первый запуск в авиарежиме, обе колоды в выборе, начало и завершение
++партии, длинное нажатие, стек/кладбище/изгнание, ручную передачу приоритета,
++сворачивание/возврат и журнал после партии. Восстановление после убийства
++процесса пока не реализовано. Наличие launcher в manifest не подтверждает запуск.
++
++Для исходного APK отдельно используйте неизменённый checkout указанного коммита,
++тот же bootstrap и команды Maven из build.sh **без** упаковки Vintage ресурсов.
++Локально исходный APK тоже не собран; это остаётся обязательной контрольной точкой.
++
++## Доступ к репозиторию: текущая остановка
++
++Подключение GitHub распознаёт аккаунт K3lT1K, но на этой проверке списки
++доступных репозиториев, собственных репозиториев и установленных приложений
++пусты. URL пользовательского репозитория в доступной переписке не найден;
++локальный origin — только upstream Card-Forge/forge. Загрузка не выполнялась.
++
++Пользователь разрешил создать новый репозиторий, название выбрано `vintage-solo`.
++У GitHub-подключения нет операции создания репозитория. Один шаг нужен от владельца:
++открыть https://github.com/new?name=vintage-solo, выбрать Private, включить
++Add a README file и нажать Create repository. README создаёт начальный commit,
++необходимый для последующего обновления дерева через доступный GitHub API.
++
++Затем нужны ссылка на созданный репозиторий и доступ приложения к нему:
++
++1. Откройте https://github.com/settings/installations под нужным аккаунтом.
++2. У приложения, которым подключали GitHub к ChatGPT/Codex, нажмите Configure.
++3. В Repository access → Only select repositories выберите репозиторий игры
++   и нажмите Save. Если приложения нет, вернитесь к подключению GitHub
++   в ChatGPT и завершите установку приложения на нужный аккаунт.
++4. Скопируйте адрес главной страницы репозитория и пришлите в чат.
++
++На этом этапе вручную загружать исходники/архив не требуется. После получения
++доступа агент сможет подготовить коммит через GitHub API и обновить ветку
++`codex/vintage-apk`; сохранённый push-trigger предназначен для запуска сборки
++без отдельной кнопки dispatch. Если GitHub блокирует Actions в форке, откройте
++репозиторий → Actions и включите workflow предложенной кнопкой; при необходимости
++пришлите экран. Разрешение загрузить код и запустить сборку уже дано.
++
++Официальные инструкции:
++https://docs.github.com/en/apps/using-github-apps/reviewing-and-modifying-installed-github-apps
++https://docs.github.com/actions/managing-workflow-runs/manually-running-a-workflow
++
++Короткая проверка на телефоне после получения APK:
++
++1. Установить APK; при запросе разрешить установку из выбранного файлового менеджера.
++2. Включить авиарежим до первого запуска и открыть Vintage Solo.
++3. Начать партию, проверить текст карт, стек/зоны и передачу приоритета.
++4. Свернуть приложение на 20 секунд и вернуться; доиграть до экрана результата.
++5. Скопировать Game Log с `[Vintage AI]`. При сбое прислать точное действие,
++   модель телефона/версию Android и скриншот либо журнал.
++
++Статусы пока: сборка НЕ ВЫПОЛНЕНА; подпись APK НЕ ПРОВЕРЕНА; запуск НЕ ПРОВЕРЕН;
++полная партия НЕ ПРОВЕРЕНА; профильная логика бота в игре НЕ ПРОВЕРЕНА.
++
++## Адреса зависимостей и текущий блокер
++
++В текущей среде есть Java 17 и модуль компилятора, но нет Maven, Android SDK,
++adb и кеша Maven. Отдельного исполняемого javac нет; локальные проверки используют
++`java --module jdk.compiler/com.sun.tools.javac.Main`.
++Попытки скачать Maven и SDK были остановлены сетевой системой с сообщением
++`network approval was cancelled before a decision was returned`. Это не ошибка
++компиляции проекта. Повторных обходных путей загрузки не применялось.
++
++Необходимые разрешённые в среде сборки адреса:
++
++- Maven: https://archive.apache.org/dist/maven/maven-3/3.8.1/binaries/apache-maven-3.8.1-bin.tar.gz и тот же адрес с `.sha512`.
++- Android CLI: https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
++- SDK package indexes, platform 35 и build-tools: https://dl.google.com/android/repository/
++- Forge plugin: https://github.com/Card-Forge/android-maven-plugin/releases/download/4.6.2/android-maven-plugin-4.6.2.jar и `.pom`.
++- Maven Central: https://repo.maven.apache.org/maven2/
++- Google Maven: https://maven.google.com/ и https://dl.google.com/dl/android/maven2/
++- GitHub release redirects/actions downloads и JDK Temurin downloads, если запускаете workflow.
++
++Ранее проверенный новый CLI URL `commandlinetools-linux-15859902_latest.zip`
++тоже был заблокирован. Скрипт использует 11076708 для совместимости с JDK 17;
++его загрузка здесь не предпринималась после сетевого отказа.
++
++## Проверки без Maven
++
++```bash
++python3 tools/vintage-solo/check.py
++bash -n tools/vintage-solo/bootstrap.sh tools/vintage-solo/build.sh
++```
++
++18 исполняемых проверок изолированных production-классов: начальная рука,
++London bottom, отсутствие белого источника, неработающая Academy, возврат Atraxa,
++установка ресурсов/повтор/отказ/защита путей ZIP. Это не полная оплата заклинания
++движком и не тест реального стека. Дополнительно синтаксический разбор 14 файлов
++интеграции Java без type checking. Полная компиляция требует Maven dependencies.
++
++## Настоящие партии и сравнение
++
++После сборки desktop jar с зависимостями:
++
++```bash
++python3 tools/vintage-solo/benchmark.py \
++  --jar forge-gui-desktop/target/forge-gui-desktop-VERSION-jar-with-dependencies.jar \
++  --seeds 101 202 303 --timeout 180
++```
++
++Укажите настоящее имя jar. Добавлен CLI `vintage-bench` в Main, вызывающий
++Match/PlayerControllerAi Forge. Один JVM на партию. Все девять упорядоченных
++сочетаний, оба первых игрока, три назначения ИИ: оба штатные, специализированный
++на месте 0, специализированный на месте 1. Итого **162 запланированных партии**
++на трёх seed, **0 выполненных здесь**. Первый игрок принудительно выбирается
++только тестовым контроллером; колоды и раздачи не подменяются.
++
++Файлы games.json, summary.json и журналы сохраняются после каждой попытки.
++TIMEOUT/ERROR не считаются ничьей. Seed задаёт RNG Forge перед созданием партии;
++после разных решений расход RNG расходится, поэтому одинаковый seed не означает
++одинаковые последующие случайные события. Для проверки repeatability повторите
++одну конфигурацию в той же версии JVM/Forge и сравните журнал.
++
++Сводка показывает исходы против штатного бота по матчапам и отдельно исходы
++контрольных партий в games.json. Малый прогон не доказывает силу против человека.
++Стенд пока проверен только синтаксически; необходим первый запуск в полной среде.
++
++## Границы реализации ИИ
++
++Реальные вызовы подключены в PlayerControllerAi, AiController, CounterAi:
++профильный London mulligan с перебором подмножеств, земля/мана/скидки/налоги,
++приоритет Oath/Orchard, fetch/Saga-поиск, важные контрцели, узкий выбор цели Swords,
++поправки Workshop mirror и Initiative/Workshop/Oath. Решение каждый раз считается
++заново по текущей позиции. Легальность, стоимость и выбор оплаты остаются Forge.
++Журнал `[Vintage AI]` входит в стандартный послематчевый Game Log и копируется.
++Записи counter/removal — кандидаты, ещё подлежащие проверке оплаты, а не гарантия
++того, что заклинание было разыграно.
++
++Не реализован общий перебор последовательностей ходов. Перебор сейчас только
++для bottom/mulligan. Нет отдельного универсального анализатора летала/угроз,
++политики удержания маны и полной специализированной комбо-логики. Атаки, блоки,
++боевые ответы, большинство целей и оплата используют штатный ИИ. Оценка начальной
++маны — эвристика двух ходов, не симуляция оплаты, имеет ограничения для Academy,
++Chrome Mox и одновременного использования разных цветов Lotus/fetch.
++Специализированный код читает свою руку, открытое поле/стек и разрешённые движком
++цели поиска, а также публично выбранный архетип; он не читает скрытую руку человека
++или порядок библиотек. Полный аудит скрытой информации во всём fallback Forge
++ещё не проведён. Улучшение над штатным ботом **не подтверждено**.
++
++## Применить только изменения
++
++Вместо полного архива можно взять `forge-vintage-solo.patch`. В чистом checkout
++базового коммита выполните `git apply /path/to/forge-vintage-solo.patch`.
++Patch включает новые файлы; повторно применять его к полному изменённому архиву
++не нужно. История Git в архив не включена.
+diff --git a/tools/vintage-solo/benchmark.py b/tools/vintage-solo/benchmark.py
+new file mode 100644
+index 00000000..cc904d12
+--- /dev/null
++++ b/tools/vintage-solo/benchmark.py
+@@ -0,0 +1,40 @@
++#!/usr/bin/env python3
++"""54 real games per seed: nine ordered matchups x both first players x three bot assignments.
++Baseline (-1) means both original bots; 0/1 means specialist in that seat.
++Every game has its own JVM and timeout. No timeout/error is counted as a draw.
++"""
++import argparse, collections, csv, itertools, json, pathlib, subprocess
++p=argparse.ArgumentParser()
++p.add_argument('--jar',required=True,help='Built desktop jar-with-dependencies')
++p.add_argument('--seeds',nargs='+',type=int,default=[101,202,303])
++p.add_argument('--timeout',type=int,default=180)
++p.add_argument('--output',default='tools/vintage-solo/reports/benchmark')
++a=p.parse_args();root=pathlib.Path(__file__).resolve().parents[2]; jar=pathlib.Path(a.jar).resolve()
++assert jar.is_file(), f'Build Forge first: {jar}'
++out=pathlib.Path(a.output).resolve();out.mkdir(parents=True,exist_ok=True)
++rows=[]
++for d0,d1,first,seed,specialist in itertools.product(['INITIATIVE','WORKSHOP','OATH'],['INITIATIVE','WORKSHOP','OATH'],range(2),a.seeds,[-1,0,1]):
++    result=out/f'{d0}-{d1}-{first}-{seed}-{specialist}.tsv'
++    result.unlink(missing_ok=True)
++    command=['java','-Xmx2g','-Djava.awt.headless=true','-Dforge.vintage.assets='+str(root/'forge-gui')+'/','-jar',str(jar),'vintage-bench',d0,d1,str(specialist),str(first),str(seed),str(result)]
++    status='ERROR';winner=None
++    with result.with_suffix('.stdout.log').open('w') as log:
++        try:
++            process=subprocess.run(command,cwd=root,stdout=log,stderr=subprocess.STDOUT,timeout=a.timeout)
++            if process.returncode==0 and result.exists():
++                parts=result.read_text().strip().split('\t');status=parts[0]
++                if status=='COMPLETE': winner=int(parts[1])
++        except subprocess.TimeoutExpired: status='TIMEOUT'
++    row=dict(deck0=d0,deck1=d1,first=first,seed=seed,specialist=specialist,status=status,winner=winner)
++    rows.append(row)
++    (out/'games.json').write_text(json.dumps(rows,indent=2)+'\n')
++    print(row,flush=True)
++summary={}
++for d0,d1 in itertools.product(['INITIATIVE','WORKSHOP','OATH'],repeat=2):
++    subset=[r for r in rows if r['deck0']==d0 and r['deck1']==d1]
++    counts=collections.Counter(r['status'] for r in subset)
++    enhanced=[r for r in subset if r['specialist']>=0 and r['status']=='COMPLETE']
++    counts.update(specialist_wins=sum(r['winner']==r['specialist'] for r in enhanced),baseline_wins=sum(r['winner']>=0 and r['winner']!=r['specialist'] for r in enhanced),draws=sum(r['winner']==-1 for r in enhanced))
++    summary[d0+' / '+d1]=dict(counts)
++(out/'summary.json').write_text(json.dumps(summary,indent=2)+'\n')
++print(json.dumps(summary,indent=2))
+diff --git a/tools/vintage-solo/bootstrap.sh b/tools/vintage-solo/bootstrap.sh
+new file mode 100644
+index 00000000..6f56b289
+--- /dev/null
++++ b/tools/vintage-solo/bootstrap.sh
+@@ -0,0 +1,48 @@
++#!/usr/bin/env bash
++# Local tools only; no apt, sudo, or implicit network-policy workarounds.
++set -euo pipefail
++TOOLS_DIR="${VINTAGE_TOOLS_DIR:-$PWD/.vintage-tools}"
++mkdir -p "$TOOLS_DIR"
++TOOLS_DIR="$(cd "$TOOLS_DIR" && pwd)"
++MAVEN_VERSION=3.8.1
++MAVEN_URL="https://archive.apache.org/dist/maven/maven-3/$MAVEN_VERSION/binaries/apache-maven-$MAVEN_VERSION-bin.tar.gz"
++if [ ! -x "$TOOLS_DIR/apache-maven-$MAVEN_VERSION/bin/mvn" ]; then
++  curl --fail --location "$MAVEN_URL" -o "$TOOLS_DIR/maven.tar.gz"
++  curl --fail --location "$MAVEN_URL.sha512" -o "$TOOLS_DIR/maven.sha512"
++  python3 - "$TOOLS_DIR" <<'PY'
++import hashlib, pathlib, sys
++p=pathlib.Path(sys.argv[1])
++expected=(p/'maven.sha512').read_text().split()[0].lower()
++assert hashlib.sha512((p/'maven.tar.gz').read_bytes()).hexdigest()==expected, 'Maven checksum mismatch'
++PY
++  tar -xzf "$TOOLS_DIR/maven.tar.gz" -C "$TOOLS_DIR"
++fi
++SDK_DIR="${ANDROID_SDK_ROOT:-$TOOLS_DIR/android-sdk}"
++mkdir -p "$SDK_DIR"
++SDK_DIR="$(cd "$SDK_DIR" && pwd)"
++# Fixed command-line tools revision compatible with JDK 17.
++if [ ! -x "$SDK_DIR/cmdline-tools/12.0/bin/sdkmanager" ]; then
++  curl --fail --location https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -o "$TOOLS_DIR/android-cli.zip"
++  mkdir -p "$TOOLS_DIR/cli-unpack" "$SDK_DIR/cmdline-tools"
++  unzip -q -o "$TOOLS_DIR/android-cli.zip" -d "$TOOLS_DIR/cli-unpack"
++  mv "$TOOLS_DIR/cli-unpack/cmdline-tools" "$SDK_DIR/cmdline-tools/12.0"
++fi
++SDKMANAGER="$SDK_DIR/cmdline-tools/12.0/bin/sdkmanager"
++# Caller must explicitly accept Android SDK terms before running this script.
++if [ "${ACCEPT_ANDROID_SDK_LICENSES:-}" != yes ]; then
++  echo 'Read Android SDK terms; rerun with ACCEPT_ANDROID_SDK_LICENSES=yes if accepted.' >&2
++  exit 2
++fi
++set +o pipefail
++yes | "$SDKMANAGER" --sdk_root="$SDK_DIR" --licenses >/dev/null
++license_status=${PIPESTATUS[1]}
++set -o pipefail
++[ "$license_status" -eq 0 ]
++"$SDKMANAGER" --sdk_root="$SDK_DIR" 'platforms;android-35' 'build-tools;35.0.0' 'platform-tools'
++PLUGIN_DIR="$HOME/.m2/repository/com/simpligility/maven/plugins/android-maven-plugin/4.6.2"
++mkdir -p "$PLUGIN_DIR"
++for extension in jar pom; do
++  curl --fail --location "https://github.com/Card-Forge/android-maven-plugin/releases/download/4.6.2/android-maven-plugin-4.6.2.$extension" -o "$PLUGIN_DIR/android-maven-plugin-4.6.2.$extension"
++done
++printf 'export PATH=%q:$PATH\nexport ANDROID_SDK_ROOT=%q\n' "$TOOLS_DIR/apache-maven-$MAVEN_VERSION/bin" "$SDK_DIR" > "$TOOLS_DIR/env.sh"
++echo "Tools ready. Source $TOOLS_DIR/env.sh"
+diff --git a/tools/vintage-solo/build.sh b/tools/vintage-solo/build.sh
+new file mode 100644
+index 00000000..722a0e52
+--- /dev/null
++++ b/tools/vintage-solo/build.sh
+@@ -0,0 +1,9 @@
++#!/usr/bin/env bash
++set -euo pipefail
++cd "$(dirname "$0")/../.."
++: "${ANDROID_SDK_ROOT:?Set ANDROID_SDK_ROOT or source .vintage-tools/env.sh}"
++command -v mvn >/dev/null
++python3 tools/vintage-solo/check.py
++python3 tools/vintage-solo/bundle_resources.py
++mvn -B clean install -Dmaven.test.skip=true
++mvn -B -P android-test-build verify -Dandroid.sdk.path="$ANDROID_SDK_ROOT" -Dandroid.buildToolsVersion=35.0.0 -Dmaven.test.skip=true
+diff --git a/tools/vintage-solo/bundle_resources.py b/tools/vintage-solo/bundle_resources.py
+new file mode 100644
+index 00000000..bfaf0f68
+--- /dev/null
++++ b/tools/vintage-solo/bundle_resources.py
+@@ -0,0 +1,23 @@
++#!/usr/bin/env python3
++"""Produce deterministic offline APK assets from this checkout (no network)."""
++import hashlib
++import pathlib
++import zipfile
++
++ROOT = pathlib.Path(__file__).resolve().parents[2]
++resources = ROOT / 'forge-gui/res'
++output = ROOT / 'forge-gui-android/assets'
++output.mkdir(parents=True, exist_ok=True)
++digest = hashlib.sha256()
++with zipfile.ZipFile(output / 'vintage-res.zip', 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=3) as archive:
++    for path in sorted(resources.rglob('*')):
++        if not path.is_file() or path.suffix == '.xcf':
++            continue
++        name = 'res/' + path.relative_to(resources).as_posix()
++        data = path.read_bytes()
++        digest.update(name.encode('utf-8') + b'\0' + data)
++        info = zipfile.ZipInfo(name, (2026, 9, 8, 0, 0, 0))
++        info.compress_type = zipfile.ZIP_DEFLATED
++        archive.writestr(info, data, compresslevel=3)
++(output / 'vintage-res.version').write_text(digest.hexdigest(), encoding='ascii')
++print('Offline resources:', output / 'vintage-res.zip', digest.hexdigest())
+diff --git a/tools/vintage-solo/check.py b/tools/vintage-solo/check.py
+new file mode 100644
+index 00000000..afbe2bf7
+--- /dev/null
++++ b/tools/vintage-solo/check.py
+@@ -0,0 +1,48 @@
++#!/usr/bin/env python3
++"""Offline checks available without Maven/Android. Never reports gameplay success."""
++import collections, datetime, json, pathlib, re, subprocess, shutil
++ROOT=pathlib.Path(__file__).resolve().parents[2]
++OUT=ROOT/'tools/vintage-solo/reports'; OUT.mkdir(exist_ok=True)
++classes=ROOT/'tools/vintage-solo/.classes'; classes.mkdir(exist_ok=True)
++javac=['javac'] if shutil.which('javac') else ['java','--module','jdk.compiler/com.sun.tools.javac.Main']
++subprocess.run([*javac,'-encoding','UTF-8','-d',str(classes),str(ROOT/'forge-ai/src/main/java/forge/ai/vintage/OpeningHandPlanner.java'),str(ROOT/'forge-core/src/main/java/forge/util/VintageResources.java'),str(ROOT/'tools/vintage-solo/tests/LocalChecks.java'),str(ROOT/'tools/vintage-solo/tests/ParseJava.java')],check=True)
++checks=subprocess.check_output(['java','-cp',str(classes),'LocalChecks'],text=True)
++# Parse actual integration files even when Maven dependencies are unavailable.
++paths=[ROOT/p for p in '''forge-ai/src/main/java/forge/ai/vintage/VintageRemoval.java
++forge-gui-desktop/src/main/java/forge/view/VintageBenchmark.java
++forge-gui-desktop/src/main/java/forge/view/Main.java
++forge-ai/src/main/java/forge/ai/AiController.java
++forge-ai/src/main/java/forge/ai/PlayerControllerAi.java
++forge-ai/src/main/java/forge/ai/ability/CounterAi.java
++forge-ai/src/main/java/forge/ai/vintage/VintageStrategy.java
++forge-core/src/main/java/forge/deck/VintageSolo.java
++forge-gui-android/src/forge/app/Main.java
++forge-gui-mobile/src/forge/Forge.java
++forge-gui-mobile/src/forge/assets/AssetsDownloader.java
++forge-gui-mobile/src/forge/screens/home/HomeScreen.java
++forge-gui-mobile/src/forge/screens/match/MatchScreen.java
++forge-gui-mobile/src/forge/screens/vintage/VintageSoloScreen.java'''.splitlines()]
++syntax=subprocess.check_output(['java','-cp',str(classes),'ParseJava',*map(str,paths)],text=True)
++index={}
++for p in (ROOT/'forge-gui/res/cardsfolder').rglob('*.txt'):
++    data=p.read_text(encoding='utf-8-sig')
++    for name in re.findall(r'^Name:(.+)$',data,re.M): index[name.strip()]=(p,data)
++fmt=(ROOT/'forge-gui/res/formats/Sanctioned/Vintage.txt').read_text()
++def names(key): return set(re.search('^'+key+':(.+)$',fmt,re.M).group(1).split('; '))
++restricted,banned=names('Restricted'),names('Banned')
++decks={}
++for p in sorted((ROOT/'forge-gui/res/vintage-solo').glob('*.dck')):
++    cards=collections.Counter()
++    for n,name in re.findall(r'^(\d+) (.+)$',p.read_text(),re.M): cards[name]+=int(n)
++    assert sum(cards.values())==60,(p,'not 60')
++    entries=[]
++    for name,n in cards.items():
++        assert name in index,(p,name,'missing script')
++        script,data=index[name]
++        assert name not in banned,(p,name,'banned')
++        assert n <= (1 if name in restricted else 99 if name in ['Plains','Island','Swamp','Mountain','Forest'] else 4),(p,name,'count illegal')
++        entries.append(dict(name=name,count=n,script=str(script.relative_to(ROOT)),ai_removal_flag='RemAIDeck:True' in data, runtime='NOT TESTED'))
++    decks[p.stem]=dict(total=60,unique=len(cards),cards=entries)
++report=dict(review_date='2026-09-08',runtime_date=str(datetime.date.today()),upstream=(ROOT/'UPSTREAM_COMMIT.txt').read_text().strip(),local_assertions=checks.strip(),syntax=syntax.strip(),decks=decks,legality='Counts and B/R against pinned Forge data only; runtime format check also wired before match',full_games=0,apk_built=False,android_launch='NOT TESTED',bot_comparison='NOT RUN',matchups='All 9 ordered pairs, both first-player assignments: NOT RUN')
++(OUT/'local-checks.json').write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n')
++print(checks+syntax+'PASS three 60-card decks: scripts present and pinned Vintage B/R counts valid')
+diff --git a/tools/vintage-solo/check_apk.py b/tools/vintage-solo/check_apk.py
+new file mode 100644
+index 00000000..5d5f0560
+--- /dev/null
++++ b/tools/vintage-solo/check_apk.py
+@@ -0,0 +1,67 @@
++#!/usr/bin/env python3
++"""Package gate: signature, launcher, DEX, native code and exact offline resources.
++Does not claim device launch, a completed game or verified AI behavior.
++"""
++import hashlib
++import os
++import pathlib
++import shutil
++import subprocess
++import tempfile
++import zipfile
++
++root = pathlib.Path(__file__).resolve().parents[2]
++reports = root / 'tools/vintage-solo/reports'
++reports.mkdir(parents=True, exist_ok=True)
++dist = root / 'dist/vintage-solo'
++dist.mkdir(parents=True, exist_ok=True)
++# A failed verification must not leave an old installable deliverable behind.
++for name in ('vintage-solo.apk', 'SHA256SUMS', 'verification.txt'):
++    (dist / name).unlink(missing_ok=True)
++sdk = pathlib.Path(os.environ['ANDROID_SDK_ROOT']) / 'build-tools/35.0.0'
++source_bundle = root / 'forge-gui-android/assets/vintage-res.zip'
++source_version = (root / 'forge-gui-android/assets/vintage-res.version').read_bytes()
++with source_bundle.open('rb') as stream:
++    source_hash = hashlib.file_digest(stream, 'sha256').hexdigest()
++expected_resources = {
++    'res/' + p.relative_to(root / 'forge-gui/res').as_posix()
++    for p in (root / 'forge-gui/res').rglob('*') if p.is_file() and p.suffix != '.xcf'
++}
++verified = []
++verification = []
++for apk in sorted((root / 'forge-gui-android/target').rglob('*.apk')):
++    signature = subprocess.run([str(sdk / 'apksigner'), 'verify', '--verbose', '--print-certs', str(apk)],
++                               capture_output=True, text=True)
++    if signature.returncode:
++        continue  # Unsigned intermediate is never copied to dist.
++    manifest = subprocess.check_output([str(sdk / 'aapt'), 'dump', 'badging', str(apk)], text=True)
++    assert "package: name='forge.vintage.solo'" in manifest, f'Wrong package: {apk}'
++    assert "launchable-activity: name='forge.app.Launcher'" in manifest, f'Missing launcher: {apk}'
++    with zipfile.ZipFile(apk) as package:
++        assert package.testzip() is None, f'Corrupt APK ZIP: {apk}'
++        assert 'classes.dex' in package.namelist(), 'Missing executable DEX'
++        assert any(n.startswith('lib/') and n.endswith('/libgdx.so') for n in package.namelist()), 'Missing LibGDX native code'
++        assert package.read('assets/vintage-res.version') == source_version, 'Wrong resource version'
++        with tempfile.TemporaryFile() as temporary:
++            with package.open('assets/vintage-res.zip') as bundled:
++                shutil.copyfileobj(bundled, temporary)
++            temporary.seek(0)
++            assert hashlib.file_digest(temporary, 'sha256').hexdigest() == source_hash, 'APK bundle differs from built resources'
++            temporary.seek(0)
++            with zipfile.ZipFile(temporary) as resources:
++                assert resources.testzip() is None, 'Corrupt offline resources'
++                assert set(resources.namelist()) == expected_resources, 'Missing or unexpected offline resources'
++    verified.append(apk)
++    verification.append(str(apk.relative_to(root)) + '\n' + signature.stdout + '\n' + manifest)
++assert verified, 'No signed APK passed verification'
++chosen = verified[-1]
++output = dist / 'vintage-solo.apk'
++shutil.copyfile(chosen, output)
++with output.open('rb') as stream:
++    digest = hashlib.file_digest(stream, 'sha256').hexdigest()
++(dist / 'SHA256SUMS').write_text(digest + '  vintage-solo.apk\n')
++status = ('Signature, package, launcher declaration, DEX, native code, offline resource integrity: PASS\n'
++          'Device launch: NOT TESTED\nFull game: NOT TESTED\nSpecialized AI behavior: NOT TESTED\n')
++(dist / 'verification.txt').write_text(status + '\n' + '\n'.join(verification))
++(reports / 'apk.txt').write_text(str(output.relative_to(root)) + '\n' + status)
++print(status + str(output))
+diff --git a/tools/vintage-solo/reports/local-checks.json b/tools/vintage-solo/reports/local-checks.json
+new file mode 100644
+index 00000000..5f731a8e
+--- /dev/null
++++ b/tools/vintage-solo/reports/local-checks.json
+@@ -0,0 +1,642 @@
++{
++  "review_date": "2026-09-08",
++  "runtime_date": "2026-09-07",
++  "upstream": "ce5b0dbf17733847929e990c77274893223e1fa6",
++  "local_assertions": "PASS 18 local assertions; no full Forge game executed",
++  "syntax": "PASS syntax parse: 14 Java files (not type checking)",
++  "decks": {
++    "initiative": {
++      "total": 60,
++      "unique": 25,
++      "cards": [
++        {
++          "name": "Chancellor of the Annex",
++          "count": 4,
++          "script": "forge-gui/res/cardsfolder/c/chancellor_of_the_annex.txt",
++          "ai_removal_flag": false,
++          "runtime": "NOT TESTED"
++        },
++        {
++          "name": "Archon of Emeria",
++          "count": 4,
++          "script": "forge-gui/res/cardsfolder/a/archon_of_emeria.txt",
++          "ai_removal_flag": false,
++          "runtime": "NOT TESTED"
++        },
++        {
++          "name": "White Plume Adventurer",
++          "count": 4,
++          "script": "forge-gui/res/cardsfolder/w/white_plume_adventurer.txt",
++          "ai_removal_flag": false,
++          "runtime": "NOT TESTED"
++        },
++        {
++          "name": "Seasoned Dungeoneer",
++          "count": 4,
++          "script": "forge-gui/res/cardsfolder/s/seasoned_dungeoneer.txt",
++          "ai_removal_flag": false,
++          "runtime": "NOT TESTED"
++        },
++        {
++          "name": "Anointed Peacekeeper",
++          "count": 4,
++          "script": "forge-gui/res/cardsfolder/a/anointed_peacekeeper.txt",
++          "ai_removal_flag": false,
++          "runtime": "NOT TESTED"
++        },
++        {
++          "name": "Witch Enchanter",
++          "count": 4,
++          "script": "forge-gui/res/cardsfolder/w/witch_enchanter_witch_blessed_meadow.txt",
++          "ai_removal_flag": false,
++          "runtime": "NOT TESTED"
++        },
++        {
++          "name": "Clarion Conqueror",
++          "count": 4,
++          "script": "forge-gui/res/cardsfolder/c/clarion_conqueror.txt",
++          "ai_removal_flag": false,
++          "runtime": "NOT TESTED"
++        },
++        {
++          "name": "Black Lotus",
++          "count": 1,
++          "script": "forge-gui/res/cardsfolder/b/black_lotus.txt",
++          "ai_removal_flag": false,
++          "runtime": "NOT TESTED"
++        },
++        {
++          "name": "Mana Crypt",
++          "count": 1,
++          "script": "forge-gui/res/cardsfolder/m/mana_crypt.txt",
++          "ai_removal_flag": false,
++          "runtime": "NOT TESTED"
++        },
++        {
++          "name": "Mox Emerald",
++          "count": 1,
++          "script": "forge-gui/res/cardsfolder/m/mox_emerald.txt",
++          "ai_removal_flag": false,
++          "runtime": "NOT TESTED"
++        },
++        {
++          "name": "Mox Sapphire",
++          "count": 1,
++          "script": "forge-gui/res/cardsfolder/m/mox_sapphire.txt",
++          "ai_removal_flag": false,
++          "runtime": "NOT TESTED"
++        },
++        {
++          "name": "Mox Pearl",
++          "count": 1,
++          "script": "forge-gui/res/cardsfolder/m/mox_pearl.txt",
++          "ai_removal_flag": false,
++          "runtime": "NOT TESTED"
++        },
++        {
++          "name": "Mox Jet",
++          "count": 1,
++          "script": "forge-gui/res/cardsfolder/m/mox_jet.txt",
++          "ai_removal_flag": false,
++          "runtime": "NOT TESTED"
++        },
++        {
++          "name": "Mox Ruby",
++          "count": 1,
++          "script": "forge-gui/res/cardsfolder/m/mox_ruby.txt",
++          "ai_removal_flag": false,
++          "runtime": "NOT TESTED"
++        },
++        {
++          "name": "Chalice of the Void",
++          "count": 1,
++          "script": "forge-gui/res/cardsfolder/c/chalice_of_the_void.txt",
++          "ai_removal_flag": false,
++          "runtime": "NOT TESTED"
++        },
++        {
++          "name": "Sol Ring",
++          "count": 1,
++          "script": "forge-gui/res/cardsfolder/s/sol_ring.txt",
++          "ai_removal_flag": false,
++          "runtime": "NOT TESTED"
++        },
++        {
++          "name": "Vexing Bauble",
++          "count": 1,
++          "script": "forge-gui/res/cardsfolder/v/vexing_bauble.txt",
++          "ai_removal_flag": false,
++          "runtime": "NOT TESTED"
++        },
++        {
++          "name": "Chrome Mox",
++          "count": 4,
++          "script": "forge-gui/res/cardsfolder/c/chrome_mox.txt",
++          "ai_removal_flag": false,
++          "runtime": "NOT TESTED"
++        },
++        {
++          "name": "Swords to Plowshares",
++          "count": 2,
++          "script": "forge-gui/res/cardsfolder/s/swords_to_plowshares.txt",
++          "ai_removal_flag": false,
++          "runtime": "NOT TESTED"
++        },
++        {
++          "name": "Karakas",
++          "count": 1,
++          "script": "forge-gui/res/cardsfolder/k/karakas.txt",
++          "ai_removal_flag": false,
++          "runtime": "NOT TESTED"
++        },
++        {
++          "name": "Strip Mine",
++          "count": 1,
++          "script": "forge-gui/res/cardsfolder/s/strip_mine.txt",
++          "ai_removal_flag": false,
++          "runtime": "NOT TESTED"
++        },
++        {
++          "name": "Plains",
++          "count": 2,
++          "script": "forge-gui/res/cardsfolder/p/plains.txt",
++          "ai_removal_flag": false,
++          "runtime": "NOT TESTED"
++        },
++        {
++          "name": "Cavern of Souls",
++          "count": 4,
++          "script": "forge-gui/res/cardsfolder/c/cavern_of_souls.txt",
++          "ai_removal_flag": false,
++          "runtime": "NOT TESTED"
++        },
++        {
++          "name": "Wasteland",
++          "count": 4,
++          "script": "forge-gui/res/cardsfolder/w/wasteland.txt",
++          "ai_removal_flag": false,
++          "runtime": "NOT TESTED"
++        },
++        {
++          "name": "Ancient Tomb",
++          "count": 4,
++          "script": "forge-gui/res/cardsfolder/a/ancient_tomb.txt",
++          "ai_removal_flag": false,
++          "runtime": "NOT TESTED"
++        }
++      ]
++    },
++    "oath": {
++      "total": 60,
++      "unique": 34,
++      "cards": [
++        {
++          "name": "Boseiju, Who Endures",
++          "count": 2,
++          "script": "forge-gui/res/cardsfolder/b/boseiju_who_endures.txt",
++          "ai_removal_flag": false,
++          "runtime": "NOT TESTED"
++        },
++        {
++          "name": "Forbidden Orchard",
++          "count": 2,
++          "script": "forge-gui/res/cardsfolder/f/forbidden_orchard.txt",
++          "ai_removal_flag": false,
++          "runtime": "NOT TESTED"
++        },
++        {
++          "name": "Hedge Maze",
++          "count": 1,
++          "script": "forge-gui/res/cardsfolder/h/hedge_maze.txt",
++          "ai_removal_flag": false,
++          "runtime": "NOT TESTED"
++        },
++        {
++          "name": "Misty Rainforest",
++          "count": 2,
++          "script": "forge-gui/res/cardsfolder/m/misty_rainforest.txt",
++          "ai_removal_flag": false,
++          "runtime": "NOT TESTED"
++        },
++        {
++          "name": "Polluted Delta",
++          "count": 1,
++          "script": "forge-gui/res/cardsfolder/p/polluted_delta.txt",
++          "ai_removal_flag": false,
++          "runtime": "NOT TESTED"
++        },
++        {
++          "name": "Scalding Tarn",
++          "count": 2,
++          "script": "forge-gui/res/cardsfolder/s/scalding_tarn.txt",
++          "ai_removal_flag": false,
++          "runtime": "NOT TESTED"
++        },
++        {
++          "name": "Strip Mine",
++          "count": 1,
++          "script": "forge-gui/res/cardsfolder/s/strip_mine.txt",
++          "ai_removal_flag": false,
++          "runtime": "NOT TESTED"
++        },
++        {
++          "name": "Thundering Falls",
++          "count": 1,
++          "script": "forge-gui/res/cardsfolder/t/thundering_falls.txt",
++          "ai_removal_flag": false,
++          "runtime": "NOT TESTED"
++        },
++        {
++          "name": "Tropical Island",
++          "count": 2,
++          "script": "forge-gui/res/cardsfolder/t/tropical_island.txt",
++          "ai_removal_flag": false,
++          "runtime": "NOT TESTED"
++        },
++        {
++          "name": "Volcanic Island",
++          "count": 2,
++          "script": "forge-gui/res/cardsfolder/v/volcanic_island.txt",
++          "ai_removal_flag": false,
++          "runtime": "NOT TESTED"
++        },
++        {
++          "name": "Wasteland",
++          "count": 4,
++          "script": "forge-gui/res/cardsfolder/w/wasteland.txt",
++          "ai_removal_flag": false,
++          "runtime": "NOT TESTED"
++        },
++        {
++          "name": "Atraxa, Grand Unifier",
++          "count": 2,
++          "script": "forge-gui/res/cardsfolder/a/atraxa_grand_unifier.txt",
++          "ai_removal_flag": false,
++          "runtime": "NOT TESTED"
++        },
++        {
++          "name": "Ancestral Recall",
++          "count": 1,
++          "script": "forge-gui/res/cardsfolder/a/ancestral_recall.txt",
++          "ai_removal_flag": false,
++          "runtime": "NOT TESTED"
++        },
++        {
++          "name": "Brainstorm",
++          "count": 1,
++          "script": "forge-gui/res/cardsfolder/b/brainstorm.txt",
++          "ai_removal_flag": false,
++          "runtime": "NOT TESTED"
++        },
++        {
++          "name": "Dig Through Time",
++          "count": 1,
++          "script": "forge-gui/res/cardsfolder/d/dig_through_time.txt",
++          "ai_removal_flag": false,
++          "runtime": "NOT TESTED"
++        },
++        {
++          "name": "Force of Negation",
++          "count": 2,
++          "script": "forge-gui/res/cardsfolder/f/force_of_negation.txt",
++          "ai_removal_flag": false,
++          "runtime": "NOT TESTED"
++        },
++        {
++          "name": "Force of Will",
++          "count": 4,
++          "script": "forge-gui/res/cardsfolder/f/force_of_will.txt",
++          "ai_removal_flag": false,
++          "runtime": "NOT TESTED"
++        },
++        {
++          "name": "Gaea's Blessing",
++          "count": 1,
++          "script": "forge-gui/res/cardsfolder/g/gaeas_blessing.txt",
++          "ai_removal_flag": false,
++          "runtime": "NOT TESTED"
++        },
++        {
++          "name": "Gitaxian Probe",
++          "count": 1,
++          "script": "forge-gui/res/cardsfolder/g/gitaxian_probe.txt",
++          "ai_removal_flag": false,
++          "runtime": "NOT TESTED"
++        },
++        {
++          "name": "Lórien Revealed",
++          "count": 2,
++          "script": "forge-gui/res/cardsfolder/l/lorien_revealed.txt",
++          "ai_removal_flag": false,
++          "runtime": "NOT TESTED"
++        },
++        {
++          "name": "Mental Misstep",
++          "count": 1,
++          "script": "forge-gui/res/cardsfolder/m/mental_misstep.txt",
++          "ai_removal_flag": false,
++          "runtime": "NOT TESTED"
++        },
++        {
++          "name": "Mindbreak Trap",
++          "count": 2,
++          "script": "forge-gui/res/cardsfolder/m/mindbreak_trap.txt",
++          "ai_removal_flag": false,
++          "runtime": "NOT TESTED"
++        },
++        {
++          "name": "Stock Up",
++          "count": 4,
++          "script": "forge-gui/res/cardsfolder/s/stock_up.txt",
++          "ai_removal_flag": false,
++          "runtime": "NOT TESTED"
++        },
++        {
++          "name": "Time Walk",
++          "count": 1,
++          "script": "forge-gui/res/cardsfolder/t/time_walk.txt",
++          "ai_removal_flag": false,
++          "runtime": "NOT TESTED"
++        },
++        {
++          "name": "Treasure Cruise",
++          "count": 1,
++          "script": "forge-gui/res/cardsfolder/t/treasure_cruise.txt",
++          "ai_removal_flag": false,
++          "runtime": "NOT TESTED"
++        },
++        {
++          "name": "Black Lotus",
++          "count": 1,
++          "script": "forge-gui/res/cardsfolder/b/black_lotus.txt",
++          "ai_removal_flag": false,
++          "runtime": "NOT TESTED"
++        },
++        {
++          "name": "Mox Emerald",
++          "count": 1,
++          "script": "forge-gui/res/cardsfolder/m/mox_emerald.txt",
++          "ai_removal_flag": false,
++          "runtime": "NOT TESTED"
++        },
++        {
++          "name": "Mox Ruby",
++          "count": 1,
++          "script": "forge-gui/res/cardsfolder/m/mox_ruby.txt",
++          "ai_removal_flag": false,
++          "runtime": "NOT TESTED"
++        },
++        {
++          "name": "Mox Sapphire",
++          "count": 1,
++          "script": "forge-gui/res/cardsfolder/m/mox_sapphire.txt",
++          "ai_removal_flag": false,
++          "runtime": "NOT TESTED"
++        },
++        {
++          "name": "Null Rod",
++          "count": 3,
++          "script": "forge-gui/res/cardsfolder/n/null_rod.txt",
++          "ai_removal_flag": false,
++          "runtime": "NOT TESTED"
++        },
++        {
++          "name": "Oath of Druids",
++          "count": 4,
++          "script": "forge-gui/res/cardsfolder/o/oath_of_druids.txt",
++          "ai_removal_flag": false,
++          "runtime": "NOT TESTED"
++        },
++        {
++          "name": "Oko, Thief of Crowns",
++          "count": 2,
++          "script": "forge-gui/res/cardsfolder/o/oko_thief_of_crowns.txt",
++          "ai_removal_flag": false,
++          "runtime": "NOT TESTED"
++        },
++        {
++          "name": "Vexing Bauble",
++          "count": 1,
++          "script": "forge-gui/res/cardsfolder/v/vexing_bauble.txt",
++          "ai_removal_flag": false,
++          "runtime": "NOT TESTED"
++        },
++        {
++          "name": "Wrenn and Six",
++          "count": 2,
++          "script": "forge-gui/res/cardsfolder/w/wrenn_and_six.txt",
++          "ai_removal_flag": false,
++          "runtime": "NOT TESTED"
++        }
++      ]
++    },
++    "workshop": {
++      "total": 60,
++      "unique": 28,
++      "cards": [
++        {
++          "name": "Ancient Tomb",
++          "count": 4,
++          "script": "forge-gui/res/cardsfolder/a/ancient_tomb.txt",
++          "ai_removal_flag": false,
++          "runtime": "NOT TESTED"
++        },
++        {
++          "name": "Arcbound Ravager",
++          "count": 4,
++          "script": "forge-gui/res/cardsfolder/a/arcbound_ravager.txt",
++          "ai_removal_flag": false,
++          "runtime": "NOT TESTED"
++        },
++        {
++          "name": "Black Lotus",
++          "count": 1,
++          "script": "forge-gui/res/cardsfolder/b/black_lotus.txt",
++          "ai_removal_flag": false,
++          "runtime": "NOT TESTED"
++        },
++        {
++          "name": "Chalice of the Void",
++          "count": 1,
++          "script": "forge-gui/res/cardsfolder/c/chalice_of_the_void.txt",
++          "ai_removal_flag": false,
++          "runtime": "NOT TESTED"
++        },
++        {
++          "name": "Foundry Inspector",
++          "count": 4,
++          "script": "forge-gui/res/cardsfolder/f/foundry_inspector.txt",
++          "ai_removal_flag": false,
++          "runtime": "NOT TESTED"
++        },
++        {
++          "name": "Hangarback Walker",
++          "count": 1,
++          "script": "forge-gui/res/cardsfolder/h/hangarback_walker.txt",
++          "ai_removal_flag": false,
++          "runtime": "NOT TESTED"
++        },
++        {
++          "name": "Lodestone Golem",
++          "count": 1,
++          "script": "forge-gui/res/cardsfolder/l/lodestone_golem.txt",
++          "ai_removal_flag": false,
++          "runtime": "NOT TESTED"
++        },
++        {
++          "name": "Mana Crypt",
++          "count": 1,
++          "script": "forge-gui/res/cardsfolder/m/mana_crypt.txt",
++          "ai_removal_flag": false,
++          "runtime": "NOT TESTED"
++        },
++        {
++          "name": "Mishra's Factory",
++          "count": 3,
++          "script": "forge-gui/res/cardsfolder/m/mishras_factory.txt",
++          "ai_removal_flag": false,
++          "runtime": "NOT TESTED"
++        },
++        {
++          "name": "Mishra's Workshop",
++          "count": 4,
++          "script": "forge-gui/res/cardsfolder/m/mishras_workshop.txt",
++          "ai_removal_flag": false,
++          "runtime": "NOT TESTED"
++        },
++        {
++          "name": "Mox Emerald",
++          "count": 1,
++          "script": "forge-gui/res/cardsfolder/m/mox_emerald.txt",
++          "ai_removal_flag": false,
++          "runtime": "NOT TESTED"
++        },
++        {
++          "name": "Mox Jet",
++          "count": 1,
++          "script": "forge-gui/res/cardsfolder/m/mox_jet.txt",
++          "ai_removal_flag": false,
++          "runtime": "NOT TESTED"
++        },
++        {
++          "name": "Mox Pearl",
++          "count": 1,
++          "script": "forge-gui/res/cardsfolder/m/mox_pearl.txt",
++          "ai_removal_flag": false,
++          "runtime": "NOT TESTED"
++        },
++        {
++          "name": "Mox Ruby",
++          "count": 1,
++          "script": "forge-gui/res/cardsfolder/m/mox_ruby.txt",
++          "ai_removal_flag": false,
++          "runtime": "NOT TESTED"
++        },
++        {
++          "name": "Mox Sapphire",
++          "count": 1,
++          "script": "forge-gui/res/cardsfolder/m/mox_sapphire.txt",
++          "ai_removal_flag": false,
++          "runtime": "NOT TESTED"
++        },
++        {
++          "name": "Phyrexian Revoker",
++          "count": 4,
++          "script": "forge-gui/res/cardsfolder/p/phyrexian_revoker.txt",
++          "ai_removal_flag": false,
++          "runtime": "NOT TESTED"
++        },
++        {
++          "name": "Sol Ring",
++          "count": 1,
++          "script": "forge-gui/res/cardsfolder/s/sol_ring.txt",
++          "ai_removal_flag": false,
++          "runtime": "NOT TESTED"
++        },
++        {
++          "name": "Sphere of Resistance",
++          "count": 4,
++          "script": "forge-gui/res/cardsfolder/s/sphere_of_resistance.txt",
++          "ai_removal_flag": false,
++          "runtime": "NOT TESTED"
++        },
++        {
++          "name": "Steel Overseer",
++          "count": 4,
++          "script": "forge-gui/res/cardsfolder/s/steel_overseer.txt",
++          "ai_removal_flag": false,
++          "runtime": "NOT TESTED"
++        },
++        {
++          "name": "Stonecoil Serpent",
++          "count": 4,
++          "script": "forge-gui/res/cardsfolder/s/stonecoil_serpent.txt",
++          "ai_removal_flag": false,
++          "runtime": "NOT TESTED"
++        },
++        {
++          "name": "Strip Mine",
++          "count": 1,
++          "script": "forge-gui/res/cardsfolder/s/strip_mine.txt",
++          "ai_removal_flag": false,
++          "runtime": "NOT TESTED"
++        },
++        {
++          "name": "Thorn of Amethyst",
++          "count": 1,
++          "script": "forge-gui/res/cardsfolder/t/thorn_of_amethyst.txt",
++          "ai_removal_flag": false,
++          "runtime": "NOT TESTED"
++        },
++        {
++          "name": "Tolarian Academy",
++          "count": 1,
++          "script": "forge-gui/res/cardsfolder/t/tolarian_academy.txt",
++          "ai_removal_flag": false,
++          "runtime": "NOT TESTED"
++        },
++        {
++          "name": "Trinisphere",
++          "count": 1,
++          "script": "forge-gui/res/cardsfolder/t/trinisphere.txt",
++          "ai_removal_flag": false,
++          "runtime": "NOT TESTED"
++        },
++        {
++          "name": "Urza's Saga",
++          "count": 1,
++          "script": "forge-gui/res/cardsfolder/u/urzas_saga.txt",
++          "ai_removal_flag": false,
++          "runtime": "NOT TESTED"
++        },
++        {
++          "name": "Vexing Bauble",
++          "count": 1,
++          "script": "forge-gui/res/cardsfolder/v/vexing_bauble.txt",
++          "ai_removal_flag": false,
++          "runtime": "NOT TESTED"
++        },
++        {
++          "name": "Walking Ballista",
++          "count": 4,
++          "script": "forge-gui/res/cardsfolder/w/walking_ballista.txt",
++          "ai_removal_flag": false,
++          "runtime": "NOT TESTED"
++        },
++        {
++          "name": "Wasteland",
++          "count": 4,
++          "script": "forge-gui/res/cardsfolder/w/wasteland.txt",
++          "ai_removal_flag": false,
++          "runtime": "NOT TESTED"
++        }
++      ]
++    }
++  },
++  "legality": "Counts and B/R against pinned Forge data only; runtime format check also wired before match",
++  "full_games": 0,
++  "apk_built": false,
++  "android_launch": "NOT TESTED",
++  "bot_comparison": "NOT RUN",
++  "matchups": "All 9 ordered pairs, both first-player assignments: NOT RUN"
++}
+diff --git a/tools/vintage-solo/tests/LocalChecks.java b/tools/vintage-solo/tests/LocalChecks.java
+new file mode 100644
+index 00000000..a494e84c
+--- /dev/null
++++ b/tools/vintage-solo/tests/LocalChecks.java
+@@ -0,0 +1,75 @@
++import forge.ai.vintage.OpeningHandPlanner;
++import forge.ai.vintage.OpeningHandPlanner.OpeningCard;
++import forge.util.VintageResources;
++import java.nio.file.*;
++import java.io.*;
++import java.util.*;
++import java.util.zip.*;
++
++public class LocalChecks {
++    static int checks;
++    static void check(boolean condition, String description) {
++        if (!condition) throw new AssertionError(description);
++        checks++;
++    }
++    static OpeningCard land(String name) { return new OpeningCard(name,0,true,false,false,false,false,false); }
++    static OpeningCard spell(String name,int cmc,boolean creature,boolean artifact,boolean white,boolean blue,boolean green) {
++        return new OpeningCard(name,cmc,false,creature,artifact,white,blue,green);
++    }
++    static byte[] zip(String name, String value) throws Exception {
++        ByteArrayOutputStream out=new ByteArrayOutputStream();
++        try(ZipOutputStream z=new ZipOutputStream(out)) {
++            z.putNextEntry(new ZipEntry(name)); z.write(value.getBytes(java.nio.charset.StandardCharsets.UTF_8)); z.closeEntry();
++        }
++        return out.toByteArray();
++    }
++    public static void main(String[] args) throws Exception {
++        OpeningCard plume=spell("White Plume Adventurer",3,true,false,true,false,false);
++        OpeningCard archon=spell("Archon of Emeria",3,true,false,true,false,false);
++        OpeningCard season=spell("Seasoned Dungeoneer",4,true,false,true,false,false);
++        OpeningCard chancellor=spell("Chancellor of the Annex",7,true,false,true,false,false);
++        var white=List.of(land("Ancient Tomb"),land("Plains"),plume,archon,season,chancellor,land("Wasteland"));
++        check(OpeningHandPlanner.choose("INITIATIVE",white,0).keep(),"White: castable pressure keep");
++        check(!OpeningHandPlanner.choose("INITIATIVE",List.of(plume,archon,season,chancellor,plume,archon,season),0).keep(),"White: no mana mulligan");
++        check(!OpeningHandPlanner.choose("INITIATIVE",List.of(land("Ancient Tomb"),land("Wasteland"),plume,archon,season,chancellor,plume),0).keep(),"White: colorless mana cannot cast white pressure");
++        check(OpeningHandPlanner.choose("INITIATIVE",white,1).bottom().equals(List.of(5)),"White: return expensive Chancellor over castable initiative");
++        OpeningCard ravager=spell("Arcbound Ravager",2,true,true,false,false,false);
++        OpeningCard inspector=spell("Foundry Inspector",3,true,true,false,false,false);
++        OpeningCard sphere=spell("Sphere of Resistance",2,false,true,false,false,false);
++        var shops=List.of(land("Mishra's Workshop"),land("Wasteland"),ravager,inspector,sphere,ravager,land("Ancient Tomb"));
++        check(OpeningHandPlanner.choose("WORKSHOP",shops,0).keep(),"Workshop: artifact curve keep");
++        check(!OpeningHandPlanner.choose("WORKSHOP",List.of(land("Tolarian Academy"),ravager,inspector,sphere,ravager,inspector,sphere),0).keep(),"Academy with no castable artifacts is not three mana");
++        OpeningCard oath=spell("Oath of Druids",2,false,false,false,false,true);
++        OpeningCard force=spell("Force of Will",5,false,false,false,true,false);
++        OpeningCard stock=spell("Stock Up",3,false,false,false,true,false);
++        OpeningCard atraxa=spell("Atraxa, Grand Unifier",7,true,false,true,true,true);
++        var control=List.of(land("Forbidden Orchard"),land("Tropical Island"),oath,force,stock,atraxa,land("Wasteland"));
++        check(OpeningHandPlanner.choose("OATH",control,0).keep(),"Oath: engine, Orchard, protection keep");
++        check(OpeningHandPlanner.choose("OATH",control,1).bottom().equals(List.of(5)),"Oath: put Atraxa back rather than engine or mana");
++        for(int n=0;n<=3;n++) {
++            var choice=OpeningHandPlanner.choose("OATH",control,n);
++            check(choice.bottom().size()==n && new HashSet<>(choice.bottom()).size()==n,"London exact unique bottom count "+n);
++        }
++        check(OpeningHandPlanner.choose("OATH",control,3).keep(),"Stop at four cards");
++        Path temp=Files.createTempDirectory("vintage-resource-test");
++        try {
++            VintageResources.install(new ByteArrayInputStream(zip("res/vintage-solo/oath.dck","deck")),temp.toFile(),"v1");
++            check(Files.readString(temp.resolve("vintage-res.version")).equals("v1"),"successful install marker");
++            VintageResources.install(new ByteArrayInputStream(zip("res/vintage-solo/oath.dck","changed")),temp.toFile(),"v1");
++            check(Files.readString(temp.resolve("res/vintage-solo/oath.dck")).equals("deck"),"same-version resume does not overwrite");
++            boolean rejected=false;
++            try { VintageResources.install(new ByteArrayInputStream(zip("res/../../escape","bad")),temp.toFile(),"v2"); }
++            catch(IOException expected) { rejected=true; }
++            check(rejected,"zip path traversal rejected");
++            check(Files.readString(temp.resolve("vintage-res.version")).equals("v1"),"failed update does not commit marker");
++            Path incomplete=temp.resolve("incomplete");
++            rejected=false;
++            try { VintageResources.install(new ByteArrayInputStream(zip("res/foo","x")),incomplete.toFile(),"v1"); }
++            catch(IOException expected) { rejected=true; }
++            check(rejected && !Files.exists(incomplete.resolve("vintage-res.version")),"incomplete installation is retryable");
++        } finally {
++            try(var files=Files.walk(temp)) { for(Path p:files.sorted(Comparator.reverseOrder()).toList()) Files.delete(p); }
++        }
++        System.out.println("PASS "+checks+" local assertions; no full Forge game executed");
++    }
++}
+diff --git a/tools/vintage-solo/tests/ParseJava.java b/tools/vintage-solo/tests/ParseJava.java
+new file mode 100644
+index 00000000..9293a980
+--- /dev/null
++++ b/tools/vintage-solo/tests/ParseJava.java
+@@ -0,0 +1,15 @@
++import javax.tools.*;
++import com.sun.source.util.JavacTask;
++import java.util.*;
++public class ParseJava {
++    public static void main(String[] args) throws Exception {
++        JavaCompiler compiler=ToolProvider.getSystemJavaCompiler();
++        DiagnosticCollector<JavaFileObject> diagnostics=new DiagnosticCollector<>();
++        try(StandardJavaFileManager fm=compiler.getStandardFileManager(diagnostics,null,null)) {
++            JavacTask task=(JavacTask)compiler.getTask(null,fm,diagnostics,List.of("-proc:none"),null,fm.getJavaFileObjects(args));
++            task.parse();
++            for(var d:diagnostics.getDiagnostics()) if(d.getKind()==Diagnostic.Kind.ERROR) throw new AssertionError(d.toString());
++        }
++        System.out.println("PASS syntax parse: "+args.length+" Java files (not type checking)");
++    }
++}
