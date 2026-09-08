@@ -1,7 +1,17 @@
 # Vintage Solo
 
-Single-player Android Vintage mode based on Forge, GPL-3.0.
+Одиночная Android-игра на движке Forge: три фиксированные колоды Vintage и начальные профильные правила бота. GPL-3.0.
 
-Pinned upstream: https://github.com/Card-Forge/forge/tree/ce5b0dbf17733847929e990c77274893223e1fa6
+## Первая собранная версия — 2026-09-08
 
-Build setup in progress. No verified APK yet. Device launch, complete games and specialized bot behavior have not been verified.
+- [Скачать APK в ZIP, около 200 МБ](https://github.com/K3lT1K/Vintage/actions/runs/34211369106/artifacts/10050272318). Распакуйте и установите `vintage-solo.apk`.
+- [Полные исходники этой сборки](https://github.com/K3lT1K/Vintage/actions/runs/34211369106/artifacts/10049965609). Внутри ZIP — tar.gz с полным деревом Forge и исправлениями.
+- [Успешная сборка и логи](https://github.com/K3lT1K/Vintage/actions/runs/34211369106).
+- [Инструкция сборки и проверки на телефоне](BUILD.md).
+- [Текущее состояние и передача работы](HANDOFF.md).
+
+Проверены полная компиляция, подпись APK, package/launcher/DEX/native libraries и целостность офлайн-ресурсов. **Запуск на телефоне, полная партия и профильная логика бота в игре ещё не проверены.** Бот не объявляется усиленным.
+
+GitHub требует вход для скачивания Actions artifacts. Срок хранения текущих artifacts — до 2026-12-07; после этого сборку можно повторить.
+
+Этот репозиторий хранит точный patch и исправления сборки. Workflow берёт Forge `ce5b0dbf17733847929e990c77274893223e1fa6`, применяет patch и `build_fixes.py`. Кнопка Code → Download ZIP скачивает этот проект сборки; полный восстановленный исходный код доступен по ссылке выше.
