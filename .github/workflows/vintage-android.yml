@@ -71,3 +71,31 @@ jobs:
           path: |
             forge/tools/vintage-solo/reports/**
             forge/HANDOFF.md
+
+  startup:
+    needs: apk
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: vintage-solo-apk
+          path: apk
+      - name: Enable KVM
+        run: sudo chmod 666 /dev/kvm
+      - name: Offline first launch and background resume on Android 16
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 36
+          target: google_apis
+          arch: x86_64
+          ram-size: 4096M
+          disk-size: 4096M
+          disable-animations: true
+          script: bash ci/startup-smoke.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: android16-startup
+          path: startup/
