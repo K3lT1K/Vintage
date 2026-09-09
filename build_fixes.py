@@ -57,3 +57,12 @@ for name in ("forge-gui-mobile/src/forge/screens/vintage/VintageSoloScreen.java"
         text = text.replace(old, new)
     assert not any(0x0400 <= ord(char) <= 0x04ff for char in text), (name, "Untranslated Cyrillic")
     p.write_text(text)
+
+# Visible pacing is installed only for actual matches opened by VintageSoloScreen.
+p = Path("forge-gui-mobile/src/forge/screens/vintage/VintageSoloScreen.java")
+text = p.read_text()
+old = "                        HostedMatch match = GuiBase.getInterface().hostMatch();"
+new = old + "\n                        match.setStartGameHook(() -> match.getGame().subscribeToEvents(\n" + \
+      "                                new forge.gamemodes.match.VintageGamePacing(match.getGame())));"
+assert text.count(old) == 1, "Expected Vintage Solo match launch"
+p.write_text(text.replace(old, new))
