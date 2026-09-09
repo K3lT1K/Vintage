@@ -19,10 +19,10 @@ index 95768df..d1c400b 100644
 +- Reproduction: apply original patch, overlay fixes, run build_fixes.py (also applies presentation.patch), then bootstrap.sh/build.sh/check_apk.py as in repository BUILD.md.
 diff --git a/forge-gui-desktop/src/test/java/forge/game/mana/VintageManaRegressionTest.java b/forge-gui-desktop/src/test/java/forge/game/mana/VintageManaRegressionTest.java
 new file mode 100644
-index 0000000..f9efc90
+index 0000000..cbe6333
 --- /dev/null
 +++ b/forge-gui-desktop/src/test/java/forge/game/mana/VintageManaRegressionTest.java
-@@ -0,0 +1,73 @@
+@@ -0,0 +1,88 @@
 +package forge.game.mana;
 +
 +import forge.ai.AITest;
@@ -45,13 +45,14 @@ index 0000000..f9efc90
 +        sa.setActivatingPlayer(p);
 +        return sa;
 +    }
-+    private void workshop(Player p) {
++    private SpellAbility workshop(Player p) {
 +        Card card = addCard("Mishra's Workshop", p);
 +        SpellAbility mana = card.getManaAbilities().get(0);
 +        mana.setActivatingPlayer(p);
 +        mana.getManaPart().produceMana("C C C", p, mana);
 +        card.setTapped(true);
 +        Assert.assertEquals(p.getManaPool().totalMana(), 3);
++        return mana;
 +    }
 +    private ManaCostBeingPaid cost(String text) {
 +        return new ManaCostBeingPaid(new ManaCost(new ManaCostParser(text)));
@@ -65,6 +66,20 @@ index 0000000..f9efc90
 +        ComputerUtilMana.payManaCost(cost("1"), spell("Sol Ring", p), p, false);
 +        Assert.assertEquals(p.getManaPool().totalMana(), 1);
 +        p.getManaPool().clearPool(true);
++        Assert.assertEquals(p.getManaPool().totalMana(), 0);
++    }
++    @Test public void directManaActivationLeavesTwoAndTaxConsumesTheRemainder() {
++        Game game = initAndCreateGame();
++        Player p = game.getPlayers().get(1);
++        SpellAbility mana = workshop(p);
++        SpellAbility bauble = spell("Vexing Bauble", p);
++        ManaCostBeingPaid payment = cost("1");
++        p.getManaPool().payManaFromAbility(bauble, payment, mana);
++        Assert.assertTrue(payment.isPaid());
++        Assert.assertEquals(p.getManaPool().totalMana(), 2);
++        addCard("Sphere of Resistance", p);
++        SpellAbility ring = spell("Sol Ring", p);
++        Assert.assertTrue(ComputerUtilMana.payManaCost(ring.getPayCosts(), p, ring, false));
 +        Assert.assertEquals(p.getManaPool().totalMana(), 0);
 +    }
 +    @Test public void actionPreviewsLeaveFloatingManaUntouched() {
@@ -213,7 +228,7 @@ index e0d93a9..dd03269 100644
              FImage icon = active ? FSkinImage.SEE : FSkinImage.UNSEE;
              float scaleW = w * 0.8f;
 diff --git a/forge-gui-mobile/src/forge/screens/match/MatchScreen.java b/forge-gui-mobile/src/forge/screens/match/MatchScreen.java
-index 289e78b..5969d80 100644
+index 289e78b..5f65326 100644
 --- a/forge-gui-mobile/src/forge/screens/match/MatchScreen.java
 +++ b/forge-gui-mobile/src/forge/screens/match/MatchScreen.java
 @@ -162,15 +162,15 @@ public class MatchScreen extends FScreen {
@@ -240,13 +255,14 @@ index 289e78b..5969d80 100644
          } else {
              menuBar.addTab("\u2022 \u2022 \u2022", new PlayerSpecificMenu(true));
              stack.setRotate90(true);
-@@ -212,6 +212,22 @@ public class MatchScreen extends FScreen {
+@@ -212,6 +212,23 @@ public class MatchScreen extends FScreen {
          }
      }
  
 +    private class MatchSettingsMenu extends FDropDownMenu {
 +        private void item(String label, FDropDown target) {
 +            addItem(new FMenuItem(label, e -> {
++                target.getMenuTab().setBounds(0, 0, getMenuTab().getWidth(), getMenuTab().getHeight());
 +                target.getMenuTab().screenPos.set(getMenuTab().screenPos);
 +                target.show();
 +            }));
@@ -263,7 +279,7 @@ index 289e78b..5969d80 100644
      private class PlayerSpecificMenu extends FDropDownMenu {
          private PlayerSpecificMenu(boolean forTopPlayer) {
              setRotate180(forTopPlayer);
-@@ -270,7 +286,7 @@ public class MatchScreen extends FScreen {
+@@ -270,7 +287,7 @@ public class MatchScreen extends FScreen {
      public void onActivate() {
          //update dev menu visibility here so returning from Settings screen allows update
          if (topPlayerPrompt == null) {
@@ -340,7 +356,7 @@ index 69f8c6d..b9d34b5 100644
      public int adjustHeight = 1;
      private int selected = 0;
 diff --git a/forge-gui-mobile/src/forge/screens/vintage/VintageSoloScreen.java b/forge-gui-mobile/src/forge/screens/vintage/VintageSoloScreen.java
-index 5815b06..56bd1fe 100644
+index 5815b06..d04dc08 100644
 --- a/forge-gui-mobile/src/forge/screens/vintage/VintageSoloScreen.java
 +++ b/forge-gui-mobile/src/forge/screens/vintage/VintageSoloScreen.java
 @@ -37,16 +37,16 @@ public final class VintageSoloScreen extends FScreen {
@@ -381,7 +397,14 @@ index 5815b06..56bd1fe 100644
          updatePlans();
      }
      public static void show() {
-@@ -102,7 +102,7 @@ public final class VintageSoloScreen extends FScreen {
+@@ -96,13 +96,14 @@ public final class VintageSoloScreen extends FScreen {
+         FModel.getPreferences().setPref(FPref.YIELD_SKIP_PHASE_DELAY, true);
+         FModel.getPreferences().setPref(FPref.YIELD_SKIP_RESOLVE_DELAY, true);
+         FModel.getPreferences().setPref(FPref.UI_SHOW_AUTOTAP_PREVIEW, true);
++        FModel.getPreferences().setPref(FPref.UI_MANA_LOST_PROMPT, true);
+         FModel.getPreferences().save();
+         // Parse/validate decks away from the rendering thread, like LobbyScreen.
+         FThreads.invokeInBackgroundThread(() -> {
              try {
                  Deck hd = loadDeck(human, false);
                  Deck bd = loadDeck(bot, true);
@@ -528,7 +551,7 @@ index 0000000..db75eef
 +Coverage was checked locally. Rendering and dynamic stack text need Android
 +verification; dynamic choice strings can still fall back to English.
 diff --git a/tools/vintage-solo/build.sh b/tools/vintage-solo/build.sh
-index 722a0e5..4cf1898 100644
+index 722a0e5..d4551f4 100644
 --- a/tools/vintage-solo/build.sh
 +++ b/tools/vintage-solo/build.sh
 @@ -6,4 +6,6 @@ command -v mvn >/dev/null
@@ -536,7 +559,7 @@ index 722a0e5..4cf1898 100644
  python3 tools/vintage-solo/bundle_resources.py
  mvn -B clean install -Dmaven.test.skip=true
 +# Exercise real Forge mana accounting and predictive affordability scans.
-+mvn -B -pl forge-gui-desktop -Dtest=VintageManaRegressionTest -DfailIfNoTests=false test
++mvn -B -pl forge-gui-desktop -am -Dtest=VintageManaRegressionTest -DfailIfNoTests=false -Dsurefire.failIfNoSpecifiedTests=false test
  mvn -B -P android-test-build verify -Dandroid.sdk.path="$ANDROID_SDK_ROOT" -Dandroid.buildToolsVersion=35.0.0 -Dmaven.test.skip=true
 diff --git a/tools/vintage-solo/check.py b/tools/vintage-solo/check.py
 index afbe2bf..19d5ee9 100644

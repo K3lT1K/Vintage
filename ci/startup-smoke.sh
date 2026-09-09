@@ -34,3 +34,21 @@ grep -E '(topResumedActivity=|mResumedActivity:|ResumedActivity:).*forge.vintage
 if grep -E 'FATAL EXCEPTION|Fatal signal|ANR in forge.vintage.solo' startup/logcat.txt; then exit 1; fi
 echo 'Offline startup process survival and resumed Main after background: PASS'
 echo 'Rendered menu, physical OnePlus, full game and bot behavior require separate verification.'
+
+# Capture actual match controls after dismissing opening prompts. These are
+# visual evidence only: surviving taps does not establish a completed game.
+read -r SCREEN_W SCREEN_H < <(python3 -c 'import struct; print(*struct.unpack(">II", open("startup/first-launch.png","rb").read()[16:24]))')
+adb shell input tap "$((SCREEN_W / 2))" "$((SCREEN_H * 86 / 100))"
+sleep 25
+adb exec-out screencap -p > startup/match-opening.png
+for n in 1 2 3 4; do
+  adb shell input tap "$((SCREEN_W * 8 / 100))" "$((SCREEN_H * 88 / 100))"
+  sleep 4
+  adb exec-out screencap -p > "startup/match-$n.png"
+done
+adb shell input tap "$((SCREEN_W * 96 / 100))" "$((SCREEN_H * 3 / 100))"
+sleep 3
+adb exec-out screencap -p > startup/match-settings.png
+adb shell pidof forge.vintage.solo
+capture
+if grep -E 'FATAL EXCEPTION|Fatal signal|ANR in forge.vintage.solo' startup/logcat.txt; then exit 1; fi
