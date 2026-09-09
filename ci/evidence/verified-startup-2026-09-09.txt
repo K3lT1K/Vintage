@@ -1,0 +1,7 @@
+2026-09-09T02:57:23.9644170Z Status: ok
+2026-09-09T03:00:27.1909294Z     topResumedActivity=ActivityRecord{83469618 u0 forge.vintage.solo/forge.app.Main t9}
+2026-09-09T03:00:27.1913027Z   ResumedActivity: ActivityRecord{83469618 u0 forge.vintage.solo/forge.app.Main t9}
+2026-09-09T03:00:37.8045278Z Status: ok
+2026-09-09T03:00:54.9474495Z     topResumedActivity=ActivityRecord{83469618 u0 forge.vintage.solo/forge.app.Main t9}
+2026-09-09T03:00:54.9477172Z   ResumedActivity: ActivityRecord{83469618 u0 forge.vintage.solo/forge.app.Main t9}
+2026-09-09T03:00:54.9910351Z Offline startup process survival and resumed Main after background: PASS
