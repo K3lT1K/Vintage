@@ -1,0 +1,560 @@
+diff --git a/HANDOFF.md b/HANDOFF.md
+index 95768df..d1c400b 100644
+--- a/HANDOFF.md
++++ b/HANDOFF.md
+@@ -147,3 +147,14 @@ Actions, но точный URL в контексте/сохранённом пр
+ GitHub tools. Попросить владельца создать Private repo с README через
+ https://github.com/new?name=vintage-solo, предоставить доступ GitHub app и
+ прислать URL. Это технически недоступная операция, не повторное согласование.
++
++
++## 2026-09-09 presentation and mana batch
++- Existing pacing retained: 1000 ms after bot land/spell, 500 ms per bot step, game thread only.
++- Gear menu nests Game/Players/Log; stack is a three-card fan at -15/0/+15 degrees with live count.
++- Landscape battlefield places lands on right, other permanents on left; card height 0.60 field height instead of 0.50. Horizontal hand area +12%.
++- Russian coverage: 67 deck cards + reverse face + Undercity/tokens/effects. Custom translations preserve English names. Roboto replaces unsupported skin font for Russian, with locale-versioned font cache.
++- Floating mana blocks implicit no-action/phase-skip passes when stack empty. Explicit end-turn yields still honored. Normal step/phase mana clearing unchanged. Original phone issue not reproduced yet.
++- Added VintageManaRegressionTest covering 3->2->1, preview/taxes, Workshop restrictions. Tests are run in build.sh after Maven install.
++- Local checks: 18 assertions and Java syntax parsing; no local Maven/Android SDK. Android compile/runtime and mana test results pending CI. No complete games or bot benchmark performed.
++- Reproduction: apply original patch, overlay fixes, run build_fixes.py (also applies presentation.patch), then bootstrap.sh/build.sh/check_apk.py as in repository BUILD.md.
+diff --git a/forge-gui-desktop/src/test/java/forge/game/mana/VintageManaRegressionTest.java b/forge-gui-desktop/src/test/java/forge/game/mana/VintageManaRegressionTest.java
+new file mode 100644
+index 0000000..f9efc90
+--- /dev/null
++++ b/forge-gui-desktop/src/test/java/forge/game/mana/VintageManaRegressionTest.java
+@@ -0,0 +1,73 @@
++package forge.game.mana;
++
++import forge.ai.AITest;
++import forge.ai.AvailableActions;
++import forge.ai.ComputerUtilMana;
++import forge.card.mana.ManaCost;
++import forge.card.mana.ManaCostParser;
++import forge.game.Game;
++import forge.game.card.Card;
++import forge.game.player.Player;
++import forge.game.spellability.SpellAbility;
++import forge.game.zone.ZoneType;
++import org.testng.Assert;
++import org.testng.annotations.Test;
++
++/** Actual Forge cards and payment code, including the action-highlight sweep. */
++public class VintageManaRegressionTest extends AITest {
++    private SpellAbility spell(String name, Player p) {
++        SpellAbility sa = addCardToZone(name, p, ZoneType.Hand).getFirstSpellAbility();
++        sa.setActivatingPlayer(p);
++        return sa;
++    }
++    private void workshop(Player p) {
++        Card card = addCard("Mishra's Workshop", p);
++        SpellAbility mana = card.getManaAbilities().get(0);
++        mana.setActivatingPlayer(p);
++        mana.getManaPart().produceMana("C C C", p, mana);
++        card.setTapped(true);
++        Assert.assertEquals(p.getManaPool().totalMana(), 3);
++    }
++    private ManaCostBeingPaid cost(String text) {
++        return new ManaCostBeingPaid(new ManaCost(new ManaCostParser(text)));
++    }
++    @Test public void threeManaPaysOneThenAnotherWithoutLosingTheRest() {
++        Game game = initAndCreateGame();
++        Player p = game.getPlayers().get(1);
++        workshop(p);
++        ComputerUtilMana.payManaCost(cost("1"), spell("Vexing Bauble", p), p, false);
++        Assert.assertEquals(p.getManaPool().totalMana(), 2);
++        ComputerUtilMana.payManaCost(cost("1"), spell("Sol Ring", p), p, false);
++        Assert.assertEquals(p.getManaPool().totalMana(), 1);
++        p.getManaPool().clearPool(true);
++        Assert.assertEquals(p.getManaPool().totalMana(), 0);
++    }
++    @Test public void actionPreviewsLeaveFloatingManaUntouched() {
++        Game game = initAndCreateGame();
++        Player p = game.getPlayers().get(1);
++        workshop(p);
++        spell("Vexing Bauble", p);
++        SpellAbility expensive = spell("Steel Overseer", p);
++        addCard("Sphere of Resistance", p);
++        addCard("Sphere of Resistance", p);
++        for (int i = 0; i < 4; i++) {
++            Assert.assertFalse(ComputerUtilMana.canPayManaCost(expensive, p, 0, false));
++            Assert.assertEquals(p.getManaPool().totalMana(), 3);
++            AvailableActions.collectActionable(p, 1500);
++            Assert.assertEquals(p.getManaPool().totalMana(), 3);
++        }
++    }
++    @Test public void workshopCannotPayNonArtifactOrActivatedAbility() {
++        Game game = initAndCreateGame();
++        Player p = game.getPlayers().get(1);
++        workshop(p);
++        Assert.assertFalse(ComputerUtilMana.canPayManaCost(spell("Oath of Druids", p), p, 0, false));
++        Card walker = addCard("Hangarback Walker", p);
++        walker.setSickness(false);
++        SpellAbility activate = walker.getSpellAbilities().stream()
++                .filter(sa -> sa.isActivatedAbility() && !sa.isManaAbility()).findFirst().orElseThrow();
++        activate.setActivatingPlayer(p);
++        Assert.assertFalse(ComputerUtilMana.canPayManaCost(activate, p, 0, false));
++        Assert.assertEquals(p.getManaPool().totalMana(), 3);
++    }
++}
+diff --git a/forge-gui-mobile/src/forge/Forge.java b/forge-gui-mobile/src/forge/Forge.java
+index 7954e10..ff55d74 100644
+--- a/forge-gui-mobile/src/forge/Forge.java
++++ b/forge-gui-mobile/src/forge/Forge.java
+@@ -246,6 +246,7 @@ public class Forge implements ApplicationListener {
+             enableUIMask = "Full";
+         else if (getForgePreferences().getPref(FPref.UI_ENABLE_BORDER_MASKING).equals("false"))
+             enableUIMask = "Off";
++        getForgePreferences().setPref(FPref.UI_LANGUAGE, "ru-RU");
+         locale = getForgePreferences().getPref(FPref.UI_LANGUAGE);
+         autoCache = getForgePreferences().getPrefBoolean(FPref.UI_AUTO_CACHE_SIZE);
+         disposeTextures = getForgePreferences().getPrefBoolean(FPref.UI_ENABLE_DISPOSE_TEXTURES);
+diff --git a/forge-gui-mobile/src/forge/assets/FSkinFont.java b/forge-gui-mobile/src/forge/assets/FSkinFont.java
+index ec6f78e..948deb7 100644
+--- a/forge-gui-mobile/src/forge/assets/FSkinFont.java
++++ b/forge-gui-mobile/src/forge/assets/FSkinFont.java
+@@ -398,7 +398,7 @@ public class FSkinFont {
+     }
+ 
+     private void updateFont() {
+-        String fontName = "f";
++        String fontName = "vintage2-" + Forge.locale + "-f";
+         if (scale != 1) {
+             if (fontSize > MAX_FONT_SIZE)
+                 fontName += MAX_FONT_SIZE;
+@@ -440,7 +440,9 @@ public class FSkinFont {
+                 generateFont(ttfFile, fontName, fontSize);
+             }
+         } else {
+-            generateFont(FSkin.getSkinFile(TTF_FILE), fontName, fontSize);
++            generateFont("ru-RU".equals(Forge.locale)
++                    ? Gdx.files.absolute(ForgeConstants.RES_DIR + "fonts/Roboto-Bold.ttf")
++                    : FSkin.getSkinFile(TTF_FILE), fontName, fontSize);
+         }
+     }
+ 
+diff --git a/forge-gui-mobile/src/forge/menu/FMenuBar.java b/forge-gui-mobile/src/forge/menu/FMenuBar.java
+index dc08d82..0f2f297 100644
+--- a/forge-gui-mobile/src/forge/menu/FMenuBar.java
++++ b/forge-gui-mobile/src/forge/menu/FMenuBar.java
+@@ -12,6 +12,8 @@ import forge.screens.match.MatchController;
+ public class FMenuBar extends Header {
+     private final List<FMenuTab> tabs = new ArrayList<>();
+     private int selected = -1;
++    private boolean rightAligned;
++    public void setRightAligned(boolean value) { rightAligned = value; revalidate(); }
+ 
+     public FMenuTab addTab(String text0, FDropDown dropDown0) {
+         return addTab(text0, dropDown0, false);
+@@ -34,6 +36,19 @@ public class FMenuBar extends Header {
+ 
+     @Override
+     protected void doLayout(float width, float height) {
++        if (rightAligned) {
++            float x = width;
++            for (int i = tabs.size()-1; i >= 0; i--) {
++                FMenuTab tab = tabs.get(i);
++                if (!tab.isVisible()) continue;
++                float w = Math.max(height, tab.getMinWidth() + 2 * FMenuTab.PADDING);
++                x -= w;
++                tab.setBounds(x, 0, w, height);
++                if (tab.iconOnly && MatchController.instance.getGameView() != null)
++                    tab.setActiveIcon(MatchController.instance.getGameView().getRevealedCollection() != null);
++            }
++            return;
++        }
+         int visibleTabCount = 0;
+         float minWidth = 0;
+         int iconOnlyTabCount = 0;
+diff --git a/forge-gui-mobile/src/forge/menu/FMenuTab.java b/forge-gui-mobile/src/forge/menu/FMenuTab.java
+index e0d93a9..dd03269 100644
+--- a/forge-gui-mobile/src/forge/menu/FMenuTab.java
++++ b/forge-gui-mobile/src/forge/menu/FMenuTab.java
+@@ -18,6 +18,10 @@ public class FMenuTab extends FDisplayObject {
+     public static final FSkinFont FONT = FSkinFont.get(12);
+     boolean iconOnly = false;
+     boolean active = false;
++    private int matchIcon;
++    /** 1: settings, 2: stack. Text remains available for the live stack count. */
++    public FMenuTab setMatchIcon(int icon) { matchIcon = icon; menuBar.revalidate(); return this; }
++
+     private static FSkinColor getSelBackColor() {
+         if (Forge.isMobileAdventureMode)
+             return FSkinColor.get(Colors.ADV_CLR_ACTIVE);
+@@ -131,6 +135,7 @@ public class FMenuTab extends FDisplayObject {
+     }
+ 
+     public float getMinWidth() {
++        if (matchIcon != 0) return FONT.getLineHeight() * 3;
+         if (iconOnly) {
+             float multiplier = Forge.isLandscapeMode() ? 2.5f : 1.8f;
+             return FONT.getLineHeight() * multiplier;
+@@ -186,7 +191,22 @@ public class FMenuTab extends FDisplayObject {
+             }
+         }
+ 
+-        if (iconOnly) {
++        if (matchIcon == 1) {
++            float size = Math.min(w, h) * 0.8f;
++            g.drawImage(FSkinImage.SETTINGS, x + (w-size)/2, y + (h-size)/2, size, size);
++        } else if (matchIcon == 2) {
++            float ch = h * 0.65f, cw = ch * 0.68f;
++            float cx = x + w * 0.43f, cy = y + h * 0.63f;
++            for (int angle = -15; angle <= 15; angle += 15) {
++                g.startRotateTransform(cx, cy, angle);
++                g.fillRect(getSelBackColor(), cx-cw/2, cy-ch*0.8f, cw, ch);
++                g.drawRect(1.5f, getSelForeColor(), cx-cw/2, cy-ch*0.8f, cw, ch);
++                g.endTransform();
++            }
++            int start = text.lastIndexOf('('), end = text.lastIndexOf(')');
++            String count = start >= 0 && end > start ? text.substring(start+1, end) : "0";
++            g.drawText(count, BADGE_FONT, getSelForeColor(), w*0.72f, y, w*0.28f, h, false, Align.center, true);
++        } else if (iconOnly) {
+             float mod = w * 0.75f;
+             FImage icon = active ? FSkinImage.SEE : FSkinImage.UNSEE;
+             float scaleW = w * 0.8f;
+diff --git a/forge-gui-mobile/src/forge/screens/match/MatchScreen.java b/forge-gui-mobile/src/forge/screens/match/MatchScreen.java
+index 289e78b..5969d80 100644
+--- a/forge-gui-mobile/src/forge/screens/match/MatchScreen.java
++++ b/forge-gui-mobile/src/forge/screens/match/MatchScreen.java
+@@ -162,15 +162,15 @@ public class MatchScreen extends FScreen {
+ 
+         FMenuBar menuBar = (FMenuBar) getHeader();
+         if (topPlayerPrompt == null) {
++            gameMenu.setMenuTab(new HiddenMenuTab(gameMenu));
++            players.setMenuTab(new HiddenMenuTab(players));
++            log.setMenuTab(new HiddenMenuTab(log));
++            devMenu.setMenuTab(new HiddenMenuTab(devMenu));
++            if (chat != null) chat.setMenuTab(new HiddenMenuTab(chat));
++            menuBar.setRightAligned(true);
+             menuBar.addTab("", revealed, true);
+-            menuBar.addTab(Forge.getLocalizer().getMessage("lblGame"), gameMenu);
+-            menuBar.addTab(Forge.getLocalizer().getMessage("lblPlayers") + " (" + playerPanels.size() + ")", players);
+-            menuBar.addTab(Forge.getLocalizer().getMessage("lblLog"), log);
+-            if (chat != null) {
+-                menuBar.addTab(Forge.getLocalizer().getMessage("lblChat"), chat);
+-            }
+-            menuBar.addTab(Forge.getLocalizer().getMessage("lblDev"), devMenu);
+-            menuBar.addTab(Forge.getLocalizer().getMessage("lblStack") + " (0)", stack);
++            menuBar.addTab(Forge.getLocalizer().getMessage("lblStack") + " (0)", stack).setMatchIcon(2);
++            menuBar.addTab("", new MatchSettingsMenu()).setMatchIcon(1);
+         } else {
+             menuBar.addTab("\u2022 \u2022 \u2022", new PlayerSpecificMenu(true));
+             stack.setRotate90(true);
+@@ -212,6 +212,22 @@ public class MatchScreen extends FScreen {
+         }
+     }
+ 
++    private class MatchSettingsMenu extends FDropDownMenu {
++        private void item(String label, FDropDown target) {
++            addItem(new FMenuItem(label, e -> {
++                target.getMenuTab().screenPos.set(getMenuTab().screenPos);
++                target.show();
++            }));
++        }
++        @Override protected void buildMenu() {
++            item(Forge.getLocalizer().getMessage("lblGame"), gameMenu);
++            item(Forge.getLocalizer().getMessage("lblPlayers") + " (" + playerPanels.size() + ")", players);
++            item(Forge.getLocalizer().getMessage("lblLog"), log);
++            if (chat != null) item(Forge.getLocalizer().getMessage("lblChat"), chat);
++            if (ForgePreferences.DEV_MODE) item(Forge.getLocalizer().getMessage("lblDev"), devMenu);
++        }
++    }
++
+     private class PlayerSpecificMenu extends FDropDownMenu {
+         private PlayerSpecificMenu(boolean forTopPlayer) {
+             setRotate180(forTopPlayer);
+@@ -270,7 +286,7 @@ public class MatchScreen extends FScreen {
+     public void onActivate() {
+         //update dev menu visibility here so returning from Settings screen allows update
+         if (topPlayerPrompt == null) {
+-            devMenu.getMenuTab().setVisible(ForgePreferences.DEV_MODE);
++            // Developer tools are nested in the settings menu.
+         }
+     }
+ 
+diff --git a/forge-gui-mobile/src/forge/screens/match/views/VField.java b/forge-gui-mobile/src/forge/screens/match/views/VField.java
+index 95152eb..93e0736 100644
+--- a/forge-gui-mobile/src/forge/screens/match/views/VField.java
++++ b/forge-gui-mobile/src/forge/screens/match/views/VField.java
+@@ -113,14 +113,9 @@ public class VField extends FContainer {
+                 otherPermanents.addAll(contraptions);
+             }
+ 
+-            if (creatures.isEmpty()) {
+-                row1.refreshCardPanels(otherPermanents);
+-                row2.refreshCardPanels(lands);
+-            } else {
+-                row1.refreshCardPanels(creatures);
+-                lands.addAll(otherPermanents);
+-                row2.refreshCardPanels(lands);
+-            }
++            creatures.addAll(otherPermanents);
++            row1.refreshCardPanels(creatures);
++            row2.refreshCardPanels(lands);
+         }
+     };
+ 
+@@ -240,21 +235,17 @@ public class VField extends FContainer {
+ 
+     @Override
+     protected void doLayout(float width, float height) {
+-        float cardSize = height / 2;
+-        float y1, y2;
+-        if (flipped) {
+-            y1 = cardSize;
+-            y2 = 0;
+-        } else {
+-            y1 = 0;
+-            y2 = cardSize;
+-        }
+-        if (Forge.isHorizontalTabLayout()) {
+-            row1.setBounds(0, y1, width, cardSize);
+-            row2.setBounds(0, y2, width, cardSize);
++        if (Forge.isLandscapeMode()) {
++            float usable = Math.max(0, width - fieldModifier - commandZoneWidth);
++            float landWidth = usable * 0.34f;
++            float cardSize = height * 0.60f;
++            float y = (height - cardSize) / 2;
++            row1.setBounds(0, y, usable - landWidth, cardSize);
++            row2.setBounds(usable - landWidth, y, landWidth, cardSize);
+         } else {
+-            row1.setBounds(0, y1, width - fieldModifier, cardSize);
+-            row2.setBounds(0, y2, (width - commandZoneWidth) - fieldModifier, cardSize);
++            float cardSize = height / 2;
++            row1.setBounds(0, flipped ? cardSize : 0, width - fieldModifier, cardSize);
++            row2.setBounds(0, flipped ? 0 : cardSize, width - commandZoneWidth - fieldModifier, cardSize);
+         }
+     }
+ 
+diff --git a/forge-gui-mobile/src/forge/screens/match/views/VPlayerPanel.java b/forge-gui-mobile/src/forge/screens/match/views/VPlayerPanel.java
+index 69f8c6d..b9d34b5 100644
+--- a/forge-gui-mobile/src/forge/screens/match/views/VPlayerPanel.java
++++ b/forge-gui-mobile/src/forge/screens/match/views/VPlayerPanel.java
+@@ -84,7 +84,7 @@ public class VPlayerPanel extends FContainer {
+     private InfoTab selectedTab;
+     private VField.FieldRow selectedRow;
+     private float avatarHeight = VAvatar.HEIGHT;
+-    private float displayAreaHeightFactor = 1.0f;
++    private float displayAreaHeightFactor = 1.12f;
+     private boolean forMultiPlayer = false;
+     public int adjustHeight = 1;
+     private int selected = 0;
+diff --git a/forge-gui-mobile/src/forge/screens/vintage/VintageSoloScreen.java b/forge-gui-mobile/src/forge/screens/vintage/VintageSoloScreen.java
+index 5815b06..56bd1fe 100644
+--- a/forge-gui-mobile/src/forge/screens/vintage/VintageSoloScreen.java
++++ b/forge-gui-mobile/src/forge/screens/vintage/VintageSoloScreen.java
+@@ -37,16 +37,16 @@ public final class VintageSoloScreen extends FScreen {
+     private static VintageSoloScreen instance;
+     private final FLabel title = add(new FLabel.Builder().text("VINTAGE • SOLO")
+             .font(FSkinFont.get(26)).align(Align.center).build());
+-    private final FLabel you = add(new FLabel.Builder().text("YOUR DECK").build());
+-    private final FLabel opponent = add(new FLabel.Builder().text("BOT DECK").build());
++    private final FLabel you = add(new FLabel.Builder().text("ВАША КОЛОДА").build());
++    private final FLabel opponent = add(new FLabel.Builder().text("КОЛОДА БОТА").build());
+     private final FComboBox<Archetype> humanDeck = add(new FComboBox<>());
+     private final FComboBox<Archetype> botDeck = add(new FComboBox<>());
+     private final FTextArea humanPlan = add(new FTextArea(false));
+     private final FTextArea botPlan = add(new FTextArea(false));
+-    private final FCheckBox autoPass = add(new FCheckBox("Auto-pass with no actions", true));
+-    private final FCheckBox textCards = add(new FCheckBox("Text cards", true));
+-    private final FButton start = add(new FButton("Start game"));
+-    private final FButton help = add(new FButton("Controls"));
++    private final FCheckBox autoPass = add(new FCheckBox("Автопередача без действий", true));
++    private final FCheckBox textCards = add(new FCheckBox("Текстовые карты", true));
++    private final FButton start = add(new FButton("Начать партию"));
++    private final FButton help = add(new FButton("Управление"));
+     private boolean starting;
+ 
+     private VintageSoloScreen() {
+@@ -57,10 +57,10 @@ public final class VintageSoloScreen extends FScreen {
+         botDeck.setChangedHandler(e -> updatePlans());
+         start.setCommand(e -> startMatch());
+         help.setCommand(e -> FOptionPane.showMessageDialog(
+-                "Long-press to zoom a card. Tap a zone to inspect it.\n"
+-                + "Select attackers and blockers on the battlefield. Use the prompt buttons to pass priority.\n"
+-                + "Use the yield menu for manual control. The game log can be viewed and copied after a match.\n"
+-                + "The specialist bot is experimental; improved strength has not been verified.", "Controls"));
++                "Удерживайте карту для увеличения. Нажмите на зону для просмотра.\n"
++                + "Выбирайте атакующих и блокирующих на поле. Кнопка OK передаёт приоритет.\n"
++                + "Шестерёнка: игра, игроки и журнал. При остатке маны автопередача останавливается.\n"
++                + "Бот: пауза 1 с после карты и 0,5 с между шагами. Усиление бота ещё не подтверждено.", "Управление"));
+         updatePlans();
+     }
+     public static void show() {
+@@ -102,7 +102,7 @@ public final class VintageSoloScreen extends FScreen {
+             try {
+                 Deck hd = loadDeck(human, false);
+                 Deck bd = loadDeck(bot, true);
+-                FThreads.invokeInEdtLater(() -> LoadingOverlay.show("Preparing game", true, () -> {
++                FThreads.invokeInEdtLater(() -> LoadingOverlay.show("Подготовка партии", true, () -> {
+                     try {
+                         RegisteredPlayer hp = new RegisteredPlayer(hd).setPlayer(GamePlayerUtil.getGuiPlayer());
+                         RegisteredPlayer bp = new RegisteredPlayer(bd).setPlayer(GamePlayerUtil.createAiPlayer("Vintage Bot", "Default"));
+diff --git a/forge-gui/res/languages/cardnames-ru-RU.txt b/forge-gui/res/languages/cardnames-ru-RU.txt
+new file mode 100644
+index 0000000..5c37aa6
+--- /dev/null
++++ b/forge-gui/res/languages/cardnames-ru-RU.txt
+@@ -0,0 +1,77 @@
++Ancestral Recall|Воспоминание предков (Ancestral Recall)|Мгновенное заклинание|Целевой игрок берёт три карты.
++Ancient Tomb|Древняя гробница (Ancient Tomb)|Земля|{T}: добавьте {C}{C}. Древняя гробница наносит вам 2 повреждения.
++Anointed Peacekeeper|Помазанный миротворец (Anointed Peacekeeper)|Существо — Человек Священник|Бдительность\nПри выходе Помазанного миротворца на поле битвы посмотрите руку оппонента, затем выберите любое название карты.\nЗаклинания с выбранным названием, которые разыгрывают ваши оппоненты, стоят на {2} больше.\nАктивация способностей источников с выбранным названием стоит на {2} больше, если это не мана-способности.
++Arcbound Ravager|Модульный опустошитель (Arcbound Ravager)|Артефактное существо — Зверь|Пожертвуйте артефакт: положите один жетон +1/+1 на Модульного опустошителя.\nМодульность 1 (Это существо выходит на поле битвы с одним жетоном +1/+1 на нём. Когда оно умирает, вы можете положить его жетоны +1/+1 на целевое артефактное существо.)
++Archon of Emeria|Архонт Эмерии (Archon of Emeria)|Существо — Архонт|Полёт\nКаждый игрок не может разыгрывать больше одного заклинания за ход.\nНебазовые земли под контролем ваших оппонентов выходят на поле битвы повёрнутыми.
++Atraxa, Grand Unifier|Атракса, великая объединительница (Atraxa, Grand Unifier)|Легендарное существо — Фирексиец Ангел|Полёт, бдительность, смертельное касание, цепь жизни\nКогда Атракса, великая объединительница выходит на поле битвы, покажите десять верхних карт вашей библиотеки. Для каждого типа карты вы можете положить в вашу руку одну карту этого типа из числа показанных. Остальные положите в низ вашей библиотеки в случайном порядке. (Артефакт, битва, существо, чары, мгновенное заклинание, род, земля, planeswalker и волшебство — типы карт.)
++Black Lotus|Чёрный лотос (Black Lotus)|Артефакт|{T}, пожертвуйте Чёрный лотос: добавьте три маны любого одного цвета.
++Boseiju, Who Endures|Босейджу, Тот, Кто Выстоит (Boseiju, Who Endures)|Легендарная земля|{T}: добавьте {G}.\nПередача — {1}{G}, сбросьте Босейджу, Тот, Кто Выстоит: уничтожьте целевой артефакт, чары или небазовую землю под контролем оппонента. Тот игрок может найти в своей библиотеке карту земли с базовым типом земли, положить её на поле битвы, затем перетасовать библиотеку. Активация этой способности стоит на {1} меньше за каждое легендарное существо под вашим контролем.
++Brainstorm|Мозговой штурм (Brainstorm)|Мгновенное заклинание|Возьмите три карты, затем положите две карты из вашей руки на верх вашей библиотеки в любом порядке.
++Cavern of Souls|Пещера душ (Cavern of Souls)|Земля|При выходе Пещеры душ на поле битвы выберите тип существа.\n{T}: добавьте {C}.\n{T}: добавьте одну ману любого цвета. Тратьте эту ману только на разыгрывание заклинания существа выбранного типа, и то заклинание не может быть отменено.
++Chalice of the Void|Чаша пустоты (Chalice of the Void)|Артефакт|Чаша пустоты выходит на поле битвы с X жетонами заряда на ней.\nКаждый раз, когда игрок разыгрывает заклинание с мановой ценностью, равной количеству жетонов заряда на Чаше пустоты, отмените то заклинание.
++Chancellor of the Annex|Канцлер Аннексии (Chancellor of the Annex)|Существо — Фирексиец Ангел|Вы можете показать эту карту из вашей начальной руки. Если вы это делаете, когда каждый оппонент разыгрывает своё первое заклинание за игру, отмените то заклинание, если тот игрок не заплатит {1}.\nПолёт\nКаждый раз, когда оппонент разыгрывает заклинание, отмените его, если тот игрок не заплатит {1}.
++Chrome Mox|Хромированный мокс (Chrome Mox)|Артефакт|Отпечаток — Когда Хромированный мокс выходит на поле битвы, вы можете изгнать из вашей руки карту, не являющуюся ни артефактом, ни землёй.\n{T}: добавьте одну ману любого из цветов изгнанной карты.
++Clarion Conqueror|Победитель с горном (Clarion Conqueror)|Существо — Дракон|Полёт\nАктивируемые способности артефактов, существ и planeswalker-ов не могут быть активированы.
++Dig Through Time|Копание во времени (Dig Through Time)|Мгновенное заклинание|Выкапывание (Каждая карта, которую вы изгоняете из вашего кладбища при разыгрывании этого заклинания, оплачивает {1}.)\nПосмотрите семь верхних карт вашей библиотеки. Положите две из них в вашу руку, а остальные — в низ вашей библиотеки в любом порядке.
++Forbidden Orchard|Запретный сад (Forbidden Orchard)|Земля|{T}: добавьте одну ману любого цвета.\nКаждый раз, когда вы поворачиваете Запретный сад для получения маны, целевой оппонент создаёт одну фишку бесцветного существа Дух 1/1.
++Force of Negation|Сила отрицания (Force of Negation)|Мгновенное заклинание|Если сейчас не ваш ход, вы можете изгнать синюю карту из вашей руки вместо оплаты мана-стоимости этого заклинания.\nОтмените целевое заклинание, не являющееся заклинанием существа. Если то заклинание отменено таким образом, изгоните его вместо помещения на кладбище его владельца.
++Force of Will|Сила воли (Force of Will)|Мгновенное заклинание|Вы можете заплатить 1 жизнь и изгнать синюю карту из вашей руки вместо оплаты мана-стоимости этого заклинания.\nОтмените целевое заклинание.
++Foundry Inspector|Инспектор литейной (Foundry Inspector)|Артефактное существо — Конструкция|Заклинания артефактов, которые вы разыгрываете, стоят на {1} меньше.
++Gaea's Blessing|Благословение Геи (Gaea's Blessing)|Волшебство|Целевой игрок втасовывает не более трёх целевых карт из своего кладбища в свою библиотеку.\nВозьмите карту.\nКогда Благословение Геи попадает в ваше кладбище из вашей библиотеки, втасуйте ваше кладбище в вашу библиотеку.
++Gitaxian Probe|Гитаксианский зонд (Gitaxian Probe)|Волшебство|({U/P} можно оплатить либо {U}, либо 2 жизнями.)\nПосмотрите руку целевого игрока.\nВозьмите карту.
++Hangarback Walker|Ангарный ходок (Hangarback Walker)|Артефактное существо — Конструкция|Ангарный ходок выходит на поле битвы с X жетонами +1/+1 на нём.\nКогда Ангарный ходок умирает, создайте по одной фишке бесцветного артефактного существа Топтер 1/1 с Полётом за каждый жетон +1/+1 на Ангарном ходоке.\n{1}, {T}: положите один жетон +1/+1 на Ангарного ходока.
++Hedge Maze|Лабиринт из изгороди (Hedge Maze)|Земля Лес Остров|({T}: добавьте {G} или {U}.)\nЛабиринт из изгороди выходит на поле битвы повёрнутым.\nКогда Лабиринт из изгороди выходит на поле битвы, наблюдайте 1. (Посмотрите верхнюю карту вашей библиотеки. Вы можете положить её на ваше кладбище.)
++Karakas|Каракас (Karakas)|Легендарная земля|{T}: добавьте {W}.\n{T}: верните целевое легендарное существо в руку его владельца.
++Lodestone Golem|Магнитный голем (Lodestone Golem)|Артефактное существо — Голем|Заклинания, не являющиеся заклинаниями артефактов, стоят на {1} больше.
++Lórien Revealed|Открытие Лориэна (Lórien Revealed)|Волшебство|Возьмите три карты.\nЦикл поиска Острова {1} ({1}, сбросьте эту карту: найдите в вашей библиотеке карту Острова, покажите её, положите в вашу руку, затем перетасуйте библиотеку.)
++Mana Crypt|Склеп маны (Mana Crypt)|Артефакт|В начале вашего шага поддержки подбросьте монету. Если вы проиграли бросок, Склеп маны наносит вам 3 повреждения.\n{T}: добавьте {C}{C}.
++Mental Misstep|Ментальная оплошность (Mental Misstep)|Мгновенное заклинание|({U/P} можно оплатить либо {U}, либо 2 жизнями.)\nОтмените целевое заклинание с мановой ценностью 1.
++Mindbreak Trap|Ловушка разума (Mindbreak Trap)|Мгновенное заклинание Ловушка|Если оппонент разыграл три или более заклинаний в этом ходу, вы можете заплатить {0} вместо оплаты мана-стоимости этого заклинания.\nИзгоните любое количество целевых заклинаний.
++Mishra's Factory|Фабрика Мишры (Mishra's Factory)|Земля|{T}: добавьте {C}.\n{1}: Фабрика Мишры становится артефактным существом Рабочий-Сборщик 2/2 до конца хода. Она по-прежнему является землёй.\n{T}: целевое существо Рабочий-Сборщик получает +1/+1 до конца хода.
++Mishra's Workshop|Мастерская Мишры (Mishra's Workshop)|Земля|{T}: добавьте {C}{C}{C}. Тратьте эту ману только на разыгрывание заклинаний артефактов.
++Misty Rainforest|Туманный тропический лес (Misty Rainforest)|Земля|{T}, заплатите 1 жизнь, пожертвуйте Туманный тропический лес: найдите в вашей библиотеке карту Леса или Острова, положите её на поле битвы, затем перетасуйте библиотеку.
++Mox Emerald|Изумрудный мокс (Mox Emerald)|Артефакт|{T}: добавьте {G}.
++Mox Jet|Гагатовый мокс (Mox Jet)|Артефакт|{T}: добавьте {B}.
++Mox Pearl|Жемчужный мокс (Mox Pearl)|Артефакт|{T}: добавьте {W}.
++Mox Ruby|Рубиновый мокс (Mox Ruby)|Артефакт|{T}: добавьте {R}.
++Mox Sapphire|Сапфировый мокс (Mox Sapphire)|Артефакт|{T}: добавьте {U}.
++Null Rod|Жезл подавления (Null Rod)|Артефакт|Активируемые способности артефактов не могут быть активированы.
++Oath of Druids|Клятва друидов (Oath of Druids)|Чары|В начале шага поддержки каждого игрока тот игрок выбирает целевого игрока, который является его оппонентом и контролирует больше существ, чем он. Первый игрок может показывать карты с верха своей библиотеки, пока не покажет карту существа. Если первый игрок это делает, он кладёт ту карту на поле битвы, а все остальные показанные таким образом карты — на своё кладбище.
++Oko, Thief of Crowns|Око, вор корон (Oko, Thief of Crowns)|Легендарный Planeswalker Oko|[+2]: создайте одну фишку Еды. (Это артефакт с «{2}, {T}, пожертвуйте эту фишку: вы получаете 3 жизни».)\n[+1]: целевой артефакт или существо теряет все способности и становится зелёным существом Лось с базовыми силой и выносливостью 3/3.\n[-5]: обменяйте контроль над целевым артефактом или существом под вашим контролем и целевым существом с силой 3 или меньше под контролем оппонента.
++Phyrexian Revoker|Фирексийский отменитель (Phyrexian Revoker)|Артефактное существо — Фирексиец Ужас|При выходе Фирексийского отменителя на поле битвы выберите название карты, не являющейся землёй.\nАктивируемые способности источников с выбранным названием не могут быть активированы.
++Plains|Равнина (Plains)|Базовая Земля Равнина|({T}: добавьте {W}.)
++Polluted Delta|Загрязнённая дельта (Polluted Delta)|Земля|{T}, заплатите 1 жизнь, пожертвуйте Загрязнённую дельту: найдите в вашей библиотеке карту Острова или Болота, положите её на поле битвы, затем перетасуйте библиотеку.
++Scalding Tarn|Кипящее озеро (Scalding Tarn)|Земля|{T}, заплатите 1 жизнь, пожертвуйте Кипящее озеро: найдите в вашей библиотеке карту Острова или Горы, положите её на поле битвы, затем перетасуйте библиотеку.
++Seasoned Dungeoneer|Опытная исследовательница подземелий (Seasoned Dungeoneer)|Существо — Человек Воин|Когда Опытная исследовательница подземелий выходит на поле битвы, вы получаете инициативу.\nКаждый раз, когда вы атакуете, целевой атакующий Священник, Бродяга, Воин или Чародей получает Защиту от существ до конца хода. Он исследует. (Покажите верхнюю карту вашей библиотеки. Положите её в вашу руку, если это земля. В противном случае положите один жетон +1/+1 на то существо, затем верните карту на верх библиотеки или положите её на ваше кладбище.)
++Sol Ring|Солнечное кольцо (Sol Ring)|Артефакт|{T}: добавьте {C}{C}.
++Sphere of Resistance|Сфера сопротивления (Sphere of Resistance)|Артефакт|Заклинания стоят на {1} больше.
++Steel Overseer|Стальной надсмотрщик (Steel Overseer)|Артефактное существо — Конструкция|{T}: положите по одному жетону +1/+1 на каждое артефактное существо под вашим контролем.
++Stock Up|Пополнение запасов (Stock Up)|Волшебство|Посмотрите пять верхних карт вашей библиотеки. Положите две из них в вашу руку, а остальные — в низ вашей библиотеки в любом порядке.
++Stonecoil Serpent|Каменный змей (Stonecoil Serpent)|Артефактное существо — Змея|Захват, Пробивной удар, Защита от многоцветного\nКаменный змей выходит на поле битвы с X жетонами +1/+1 на нём.
++Strip Mine|Открытая шахта (Strip Mine)|Земля|{T}: добавьте {C}.\n{T}, пожертвуйте Открытую шахту: уничтожьте целевую землю.
++Swords to Plowshares|Мечи в плуги (Swords to Plowshares)|Мгновенное заклинание|Изгоните целевое существо. Его контролирующий игрок получает количество жизней, равное его силе.
++Thorn of Amethyst|Аметистовый шип (Thorn of Amethyst)|Артефакт|Заклинания, не являющиеся заклинаниями существ, стоят на {1} больше.
++Thundering Falls|Грохочущие водопады (Thundering Falls)|Земля Остров Гора|({T}: добавьте {U} или {R}.)\nГрохочущие водопады выходят на поле битвы повёрнутыми.\nКогда Грохочущие водопады выходят на поле битвы, наблюдайте 1. (Посмотрите верхнюю карту вашей библиотеки. Вы можете положить её на ваше кладбище.)
++Time Walk|Прогулка во времени (Time Walk)|Волшебство|Сыграйте дополнительный ход после этого.
++Tolarian Academy|Толарианская академия (Tolarian Academy)|Легендарная земля|{T}: добавьте {U} за каждый артефакт под вашим контролем.
++Treasure Cruise|Круиз за сокровищами (Treasure Cruise)|Волшебство|Выкапывание (Каждая карта, которую вы изгоняете из вашего кладбища при разыгрывании этого заклинания, оплачивает {1}.)\nВозьмите три карты.
++Trinisphere|Тринисфера (Trinisphere)|Артефакт|Пока Тринисфера не повёрнута, каждое заклинание, разыгрывание которого стоило бы меньше трёх ман, стоит три маны. (Дополнительную ману в стоимости можно оплатить маной любого цвета или бесцветной маной. Например, заклинание, которое стоило бы {1}{B}, вместо этого стоит {2}{B}.)
++Tropical Island|Тропический остров (Tropical Island)|Земля Лес Остров|({T}: добавьте {G} или {U}.)
++Urza's Saga|Сага Урзы (Urza's Saga)|Чары земля — Урзы Сага|(При выходе этой Саги на поле битвы и после вашего шага взятия карты добавьте один жетон знаний. Пожертвуйте её после III.)\nI — Сага Урзы получает «{T}: добавьте {C}».\nII — Сага Урзы получает «{2}, {T}: создайте одну фишку бесцветного артефактного существа Конструкция 0/0 с „Эта фишка получает +1/+1 за каждый артефакт под вашим контролем“».\nIII — Найдите в вашей библиотеке карту артефакта с мана-стоимостью {0} или {1}, положите её на поле битвы, затем перетасуйте библиотеку.
++Vexing Bauble|Докучливая побрякушка (Vexing Bauble)|Артефакт|Каждый раз, когда игрок разыгрывает заклинание, если на его разыгрывание не было потрачено маны, отмените то заклинание.\n{1}, {T}, пожертвуйте Докучливую побрякушку: возьмите карту.
++Volcanic Island|Вулканический остров (Volcanic Island)|Земля Остров Гора|({T}: добавьте {U} или {R}.)
++Walking Ballista|Шагающая баллиста (Walking Ballista)|Артефактное существо — Конструкция|Шагающая баллиста выходит на поле битвы с X жетонами +1/+1 на ней.\n{4}: положите один жетон +1/+1 на Шагающую баллисту.\nУдалите один жетон +1/+1 со Шагающей баллисты: она наносит 1 повреждение любой цели.
++Wasteland|Пустошь (Wasteland)|Земля|{T}: добавьте {C}.\n{T}, пожертвуйте Пустошь: уничтожьте целевую небазовую землю.
++White Plume Adventurer|Искатель приключений с белым пером (White Plume Adventurer)|Существо — Орк Священник|Когда Искатель приключений с белым пером выходит на поле битвы, вы получаете инициативу.\nВ начале шага поддержки каждого оппонента разверните существо под вашим контролем. Если вы завершили подземелье, вместо этого разверните все существа под вашим контролем.
++Witch Enchanter|Ведьма-зачаровательница (Witch Enchanter)|Существо — Человек Колдун|Когда Ведьма-зачаровательница выходит на поле битвы, уничтожьте целевой артефакт или чары под контролем оппонента.
++Witch-Blessed Meadow|Луг, благословлённый ведьмой (Witch-Blessed Meadow)|Земля|При выходе Луга, благословлённого ведьмой на поле битвы вы можете заплатить 3 жизни. Если вы этого не делаете, он выходит повёрнутым.\n{T}: добавьте {W}.
++Wrenn and Six|Ренн и Шестой (Wrenn and Six)|Легендарный Planeswalker Wrenn|[+1]: верните не более одной целевой карты земли из вашего кладбища в вашу руку.\n[-1]: Ренн и Шестой наносит 1 повреждение любой цели.\n[-7]: вы получаете эмблему с «Карты мгновенных заклинаний и волшебства в вашем кладбище имеют Retrace (повторное разыгрывание)». (Вы можете разыгрывать карты мгновенных заклинаний и волшебства из вашего кладбища, сбрасывая карту земли в дополнение к оплате их других стоимостей.)
++Undercity|Подземный город (Undercity)|Подземелье — Подземный город|Вы не можете войти в это подземелье иначе, чем «отправиться в Подземный город».\nТайный вход — найдите в вашей библиотеке карту базовой земли, покажите её, положите в вашу руку, затем перетасуйте библиотеку. (Далее: Кузница или Затерянный колодец.)\nКузница — положите два жетона +1/+1 на целевое существо. (Далее: Ловушка! или Арена.)\nЗатерянный колодец — предскажите 2. (Далее: Арена или Тайник.)\nЛовушка! — целевой игрок теряет 5 жизней. (Далее: Архив.)\nАрена — спровоцируйте целевое существо. (Далее: Архив или Катакомбы.)\nТайник — создайте одну фишку Сокровища. (Далее: Катакомбы.)\nАрхив — возьмите карту. (Далее: Трон Мёртвой Троицы.)\nКатакомбы — создайте одну фишку чёрного существа Скелет 4/1 с Угрозой. (Далее: Трон Мёртвой Троицы.)\nТрон Мёртвой Троицы — покажите десять верхних карт вашей библиотеки. Положите карту существа из их числа на поле битвы с тремя жетонами +1/+1 на ней. Она получает Порчеустойчивость до вашего следующего хода. Затем перетасуйте библиотеку.
++Food Token|Фишка Еды|Фишка артефакта — Еда|{2}, {T}, пожертвуйте эту фишку: вы получаете 3 жизни.
++Treasure Token|Фишка Сокровища|Фишка артефакта — Сокровище|{T}, пожертвуйте эту фишку: добавьте одну ману любого цвета.
++Construct Token|Фишка Конструкции|Фишка артефактного существа — Конструкция|Это существо получает +1/+1 за каждый артефакт под вашим контролем.
++Thopter Token|Фишка Топтера|Фишка артефактного существа — Топтер|Полёт
++Spirit Token|Фишка Духа|Фишка существа — Дух|
++Skeleton Token|Фишка Скелета|Фишка существа — Скелет|Угроза
++The Initiative|Инициатива|Эффект|Когда вы получаете инициативу и в начале вашего шага поддержки, отправьтесь в Подземный город. Когда одно или несколько существ игрока наносят вам боевые повреждения, тот игрок получает инициативу. Только один игрок может обладать инициативой одновременно.
++Wrenn and Six Emblem|Эмблема Ренн и Шестого|Эмблема — Ренн|Карты мгновенных заклинаний и волшебства в вашем кладбище имеют Retrace: вы можете разыгрывать их из кладбища, сбрасывая карту земли в дополнение к оплате других стоимостей.
+diff --git a/forge-gui/src/main/java/forge/player/PlayerControllerHuman.java b/forge-gui/src/main/java/forge/player/PlayerControllerHuman.java
+index 0b45b86..d7493e1 100644
+--- a/forge-gui/src/main/java/forge/player/PlayerControllerHuman.java
++++ b/forge-gui/src/main/java/forge/player/PlayerControllerHuman.java
+@@ -1704,7 +1704,7 @@ public class PlayerControllerHuman extends PlayerController implements IGameCont
+         }
+ 
+         if (stack.isEmpty()) {
+-            if (isUiSetToSkipPhase(getGame().getPhaseHandler().getPlayerTurn().getView(), getGame().getPhaseHandler().getPhase())) {
++            if (!hasFloatingManaStop() && isUiSetToSkipPhase(getGame().getPhaseHandler().getPlayerTurn().getView(), getGame().getPhaseHandler().getPhase())) {
+                 getGui().awaitNextInput();
+                 netLog.trace("Returning null (skipPhase) for player {}", player.getName());
+                 return null; // avoid prompt for input if stack is empty and
+@@ -3819,9 +3819,14 @@ public class PlayerControllerHuman extends PlayerController implements IGameCont
+         return gui instanceof RemoteClientGuiGame;
+     }
+ 
++    /** Do not silently leave a step with unspent mana. Explicit end-turn yields still apply. */
++    private boolean hasFloatingManaStop() {
++        return getGame().getStack().isEmpty() && !getPlayer().getManaPool().isEmpty();
++    }
++
+     public boolean mayAutoPass() {
+         return yieldController.shouldAutoYield()
+-                || yieldController.isAutoPassingNoActions(getLocalPlayerView());
++                || (!hasFloatingManaStop() && yieldController.isAutoPassingNoActions(getLocalPlayerView()));
+     }
+ 
+     public void autoPassUntilEndOfTurn() {
+diff --git a/tools/vintage-solo/TRANSLATION.md b/tools/vintage-solo/TRANSLATION.md
+new file mode 100644
+index 0000000..db75eef
+--- /dev/null
++++ b/tools/vintage-solo/TRANSLATION.md
+@@ -0,0 +1,19 @@
++# Russian card text
++
++This distribution translates the 67 distinct cards in the three bundled decks,
++the reverse face of Witch Enchanter, Undercity and associated tokens/effects.
++It does not translate Forge's entire external card database.
++
++The bundled pinned Forge Oracle text is the source. These are custom Russian
++translations, not a claim of official localized printings. English canonical
++names are retained in parentheses. Card scripts, internal names, costs, deck
++identities and legality data are unchanged. Terms including mana value,
++additional versus alternative costs, counters, tokens, exile and targets are
++kept distinct. Full English rules remain in the source scripts.
++
++Roboto-Bold.ttf is already bundled upstream and contains Cyrillic. The old
++skin font1.ttf does not. Russian now selects Roboto and a new locale-specific
++bitmap font cache name to prevent stale Latin-only caches on app updates.
++
++Coverage was checked locally. Rendering and dynamic stack text need Android
++verification; dynamic choice strings can still fall back to English.
+diff --git a/tools/vintage-solo/build.sh b/tools/vintage-solo/build.sh
+index 722a0e5..4cf1898 100644
+--- a/tools/vintage-solo/build.sh
++++ b/tools/vintage-solo/build.sh
+@@ -6,4 +6,6 @@ command -v mvn >/dev/null
+ python3 tools/vintage-solo/check.py
+ python3 tools/vintage-solo/bundle_resources.py
+ mvn -B clean install -Dmaven.test.skip=true
++# Exercise real Forge mana accounting and predictive affordability scans.
++mvn -B -pl forge-gui-desktop -Dtest=VintageManaRegressionTest -DfailIfNoTests=false test
+ mvn -B -P android-test-build verify -Dandroid.sdk.path="$ANDROID_SDK_ROOT" -Dandroid.buildToolsVersion=35.0.0 -Dmaven.test.skip=true
+diff --git a/tools/vintage-solo/check.py b/tools/vintage-solo/check.py
+index afbe2bf..19d5ee9 100644
+--- a/tools/vintage-solo/check.py
++++ b/tools/vintage-solo/check.py
+@@ -21,7 +21,14 @@ forge-gui-mobile/src/forge/Forge.java
+ forge-gui-mobile/src/forge/assets/AssetsDownloader.java
+ forge-gui-mobile/src/forge/screens/home/HomeScreen.java
+ forge-gui-mobile/src/forge/screens/match/MatchScreen.java
+-forge-gui-mobile/src/forge/screens/vintage/VintageSoloScreen.java'''.splitlines()]
++forge-gui-mobile/src/forge/screens/vintage/VintageSoloScreen.java
++forge-gui-mobile/src/forge/menu/FMenuBar.java
++forge-gui-mobile/src/forge/menu/FMenuTab.java
++forge-gui-mobile/src/forge/assets/FSkinFont.java
++forge-gui-mobile/src/forge/screens/match/views/VField.java
++forge-gui-mobile/src/forge/screens/match/views/VPlayerPanel.java
++forge-gui/src/main/java/forge/player/PlayerControllerHuman.java
++forge-gui-desktop/src/test/java/forge/game/mana/VintageManaRegressionTest.java'''.splitlines()]
+ syntax=subprocess.check_output(['java','-cp',str(classes),'ParseJava',*map(str,paths)],text=True)
+ index={}
+ for p in (ROOT/'forge-gui/res/cardsfolder').rglob('*.txt'):

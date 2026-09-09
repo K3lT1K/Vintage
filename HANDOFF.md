@@ -51,3 +51,7 @@
 ## Следующее действие
 
 Дать пользователю новую ссылку APK и попросить повторный запуск/Start game на OnePlus. После конкретного отчёта чинить ошибку и повторять соответствующий тест. Игровые функции пока не расширять. Корневой HANDOFF новее исторического HANDOFF внутри полного Forge source artifact, создаваемого перед CI.
+
+
+## Current batch (2026-09-09)
+Pacing retained. Gear + stack fan, lands right, larger battlefield cards, Russian card text with Cyrillic font fix, floating-mana stop before implicit phase advance. No confirmed engine loss bug yet. Added real mana regression tests (3->2->1, preview under tax, Workshop restrictions). Local 18 assertions and 21 Java syntax parses passed. Build/Android smoke pending for this commit; full games/bot comparisons remain untested. Complete resulting source and APK are uploaded by workflow. `build_fixes.py` now applies `presentation.patch` after legacy corrections. See source tools/vintage-solo/TRANSLATION.md for custom translation scope.

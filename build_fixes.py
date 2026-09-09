@@ -66,3 +66,8 @@ new = old + "\n                        match.setStartGameHook(() -> match.getGam
       "                                new forge.gamemodes.match.VintageGamePacing(match.getGame())));"
 assert text.count(old) == 1, "Expected Vintage Solo match launch"
 p.write_text(text.replace(old, new))
+
+# Batched presentation, Russian text and mana regression changes, after all legacy fixes.
+import subprocess
+subprocess.run(["git", "apply", "--check", str(Path(__file__).resolve().with_name("presentation.patch"))], check=True)
+subprocess.run(["git", "apply", str(Path(__file__).resolve().with_name("presentation.patch"))], check=True)

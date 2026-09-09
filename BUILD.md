@@ -51,3 +51,6 @@ python3 tools/vintage-solo/check_apk.py
 - Отдельный job startup устанавливает именно собранный APK на эмулятор API36 x86_64, отключает Wi-Fi/данные, наблюдает процесс 180 секунд, проверяет resumed Main, нажимает HOME и возвращает приложение. Сохраняет logcat, dumpsys и скриншоты.
 
 Оба jobs успешны в [run 34304628301](https://github.com/K3lT1K/Vintage/actions/runs/34304628301); подписи меню визуально проверены по скриншоту. Тест не нажимает Start game и не проводит партии. Исходный немодифицированный APK отдельно не собран.
+
+
+The 2026-09-09 batch is in `presentation.patch`, automatically applied last by `build_fixes.py`. Do not apply it a second time. Build now runs `VintageManaRegressionTest` against real Forge cards before packaging. Russian uses the bundled Roboto font and `cardnames-ru-RU.txt`; no online fonts or translation service.
