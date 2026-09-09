@@ -1,8 +1,8 @@
 diff --git a/HANDOFF.md b/HANDOFF.md
-index 95768df..d1c400b 100644
+index 95768df..056742d 100644
 --- a/HANDOFF.md
 +++ b/HANDOFF.md
-@@ -147,3 +147,14 @@ Actions, но точный URL в контексте/сохранённом пр
+@@ -147,3 +147,16 @@ Actions, но точный URL в контексте/сохранённом пр
  GitHub tools. Попросить владельца создать Private repo с README через
  https://github.com/new?name=vintage-solo, предоставить доступ GitHub app и
  прислать URL. Это технически недоступная операция, не повторное согласование.
@@ -11,18 +11,20 @@ index 95768df..d1c400b 100644
 +## 2026-09-09 presentation and mana batch
 +- Existing pacing retained: 1000 ms after bot land/spell, 500 ms per bot step, game thread only.
 +- Gear menu nests Game/Players/Log; stack is a three-card fan at -15/0/+15 degrees with live count.
-+- Landscape battlefield places lands on right, other permanents on left; card height 0.60 field height instead of 0.50. Horizontal hand area +12%.
++- Landscape battlefield places lands on right, other permanents on left; card height 0.60 field height instead of 0.50. Portrait hand area +12%.
 +- Russian coverage: 67 deck cards + reverse face + Undercity/tokens/effects. Custom translations preserve English names. Roboto replaces unsupported skin font for Russian, with locale-versioned font cache.
 +- Floating mana blocks implicit no-action/phase-skip passes when stack empty. Explicit end-turn yields still honored. Normal step/phase mana clearing unchanged. Original phone issue not reproduced yet.
 +- Added VintageManaRegressionTest covering 3->2->1, preview/taxes, Workshop restrictions. Tests are run in build.sh after Maven install.
 +- Local checks: 18 assertions and Java syntax parsing; no local Maven/Android SDK. Android compile/runtime and mana test results pending CI. No complete games or bot benchmark performed.
 +- Reproduction: apply original patch, overlay fixes, run build_fixes.py (also applies presentation.patch), then bootstrap.sh/build.sh/check_apk.py as in repository BUILD.md.
++
++Follow-up verification: first batch compiled all modules; test invocation needed -am to resolve Forge parent revision in reactor. Next run executed four mana tests: three passed; the direct-payment test incorrectly bypassed CostAdjustment for the taxed second spell. Corrected fixture to use the actual adjustment stage. No engine-loss bug reproduced. Added permanent top-bar mana counts; corrected Russian custom-font routing to always use bundled Roboto; enabled existing manual mana-loss confirmation. Added live-card Russian text test.
 diff --git a/forge-gui-desktop/src/test/java/forge/game/mana/VintageManaRegressionTest.java b/forge-gui-desktop/src/test/java/forge/game/mana/VintageManaRegressionTest.java
 new file mode 100644
-index 0000000..cbe6333
+index 0000000..9c429ad
 --- /dev/null
 +++ b/forge-gui-desktop/src/test/java/forge/game/mana/VintageManaRegressionTest.java
-@@ -0,0 +1,88 @@
+@@ -0,0 +1,101 @@
 +package forge.game.mana;
 +
 +import forge.ai.AITest;
@@ -79,7 +81,7 @@ index 0000000..cbe6333
 +        Assert.assertEquals(p.getManaPool().totalMana(), 2);
 +        addCard("Sphere of Resistance", p);
 +        SpellAbility ring = spell("Sol Ring", p);
-+        Assert.assertTrue(ComputerUtilMana.payManaCost(ring.getPayCosts(), p, ring, false));
++        Assert.assertTrue(ComputerUtilMana.payManaCost(forge.game.cost.CostAdjustment.adjust(ring.getPayCosts(), ring, false), p, ring, false));
 +        Assert.assertEquals(p.getManaPool().totalMana(), 0);
 +    }
 +    @Test public void actionPreviewsLeaveFloatingManaUntouched() {
@@ -95,6 +97,19 @@ index 0000000..cbe6333
 +            Assert.assertEquals(p.getManaPool().totalMana(), 3);
 +            AvailableActions.collectActionable(p, 1500);
 +            Assert.assertEquals(p.getManaPool().totalMana(), 3);
++        }
++    }
++    @Test public void russianRulesReachLiveCardView() {
++        forge.util.CardTranslation.preloadTranslation("ru-RU", forge.localinstance.properties.ForgeConstants.LANG_DIR);
++        try {
++            Game game = initAndCreateGame();
++            Player p = game.getPlayers().get(1);
++            Card card = addCard("Mishra's Workshop", p);
++            String text = forge.gui.card.CardDetailUtil.composeCardText(card.getView().getCurrentState(), game.getView(), true);
++            Assert.assertTrue(text.contains("добавьте"), text);
++            Assert.assertTrue(text.contains("артефактов"), text);
++        } finally {
++            forge.util.CardTranslation.preloadTranslation("en-US", forge.localinstance.properties.ForgeConstants.LANG_DIR);
 +        }
 +    }
 +    @Test public void workshopCannotPayNonArtifactOrActivatedAbility() {
@@ -124,7 +139,7 @@ index 7954e10..ff55d74 100644
          autoCache = getForgePreferences().getPrefBoolean(FPref.UI_AUTO_CACHE_SIZE);
          disposeTextures = getForgePreferences().getPrefBoolean(FPref.UI_ENABLE_DISPOSE_TEXTURES);
 diff --git a/forge-gui-mobile/src/forge/assets/FSkinFont.java b/forge-gui-mobile/src/forge/assets/FSkinFont.java
-index ec6f78e..948deb7 100644
+index ec6f78e..da10f39 100644
 --- a/forge-gui-mobile/src/forge/assets/FSkinFont.java
 +++ b/forge-gui-mobile/src/forge/assets/FSkinFont.java
 @@ -398,7 +398,7 @@ public class FSkinFont {
@@ -136,6 +151,15 @@ index ec6f78e..948deb7 100644
          if (scale != 1) {
              if (fontSize > MAX_FONT_SIZE)
                  fontName += MAX_FONT_SIZE;
+@@ -407,7 +407,7 @@ public class FSkinFont {
+         } else {
+             fontName += fontSize;
+         }
+-        boolean useCjkFont = Lang.initInstance(Forge.locale).getFontFile() != null;
++        boolean useCjkFont = !"ru-RU".equals(Forge.locale) && Lang.initInstance(Forge.locale).getFontFile() != null;
+         if (useCjkFont && !Forge.forcedEnglishonCJKMissing) {
+             fontName += Forge.locale;
+         }
 @@ -440,7 +440,9 @@ public class FSkinFont {
                  generateFont(ttfFile, fontName, fontSize);
              }
@@ -147,8 +171,17 @@ index ec6f78e..948deb7 100644
          }
      }
  
+@@ -458,7 +460,7 @@ public class FSkinFont {
+         } else {
+             pageSize = 256;
+         }
+-        if (Lang.initInstance(Forge.locale).getFontFile() != null && !Forge.forcedEnglishonCJKMissing) {
++        if (!"ru-RU".equals(Forge.locale) && Lang.initInstance(Forge.locale).getFontFile() != null && !Forge.forcedEnglishonCJKMissing) {
+             pageSize = 1024;
+         }
+ 
 diff --git a/forge-gui-mobile/src/forge/menu/FMenuBar.java b/forge-gui-mobile/src/forge/menu/FMenuBar.java
-index dc08d82..0f2f297 100644
+index dc08d82..8969459 100644
 --- a/forge-gui-mobile/src/forge/menu/FMenuBar.java
 +++ b/forge-gui-mobile/src/forge/menu/FMenuBar.java
 @@ -12,6 +12,8 @@ import forge.screens.match.MatchController;
@@ -180,6 +213,32 @@ index dc08d82..0f2f297 100644
          int visibleTabCount = 0;
          float minWidth = 0;
          int iconOnlyTabCount = 0;
+@@ -77,6 +92,25 @@ public class FMenuBar extends Header {
+         float w = getWidth();
+         float h = getHeight();
+         g.fillRect(getBackColor(), 0, 0, w, h);
++        if (rightAligned && MatchController.getView() != null
++                && MatchController.getView().getBottomPlayerPanel() != null) {
++            forge.game.player.PlayerView player = MatchController.getView().getBottomPlayerPanel().getPlayer();
++            byte[] colors = {forge.card.MagicColor.WHITE, forge.card.MagicColor.BLUE,
++                    forge.card.MagicColor.BLACK, forge.card.MagicColor.RED,
++                    forge.card.MagicColor.GREEN, (byte) forge.card.mana.ManaAtom.COLORLESS};
++            String[] symbols = {"W", "U", "B", "R", "G", "C"};
++            float size = h * 0.55f, x = FMenuTab.PADDING * 3;
++            float slot = size + FMenuTab.FONT.getBounds("999").width + FMenuTab.PADDING * 3;
++            float limit = tabs.isEmpty() ? w : tabs.get(0).getLeft();
++            for (int i = 0; i < colors.length && x + slot <= limit; i++) {
++                forge.card.CardFaceSymbols.drawSymbol(symbols[i], g, x, (h-size)/2, size, size);
++                g.drawText(Integer.toString(player.getMana(colors[i])), FMenuTab.FONT,
++                        forge.assets.FSkinColor.get(forge.assets.FSkinColor.Colors.CLR_TEXT),
++                        x+size+FMenuTab.PADDING, 0, slot-size, h, false,
++                        com.badlogic.gdx.utils.Align.left, true);
++                x += slot;
++            }
++        }
+     }
+ 
+     @Override
 diff --git a/forge-gui-mobile/src/forge/menu/FMenuTab.java b/forge-gui-mobile/src/forge/menu/FMenuTab.java
 index e0d93a9..dd03269 100644
 --- a/forge-gui-mobile/src/forge/menu/FMenuTab.java
