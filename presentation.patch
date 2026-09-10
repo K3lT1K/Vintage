@@ -1,8 +1,8 @@
 diff --git a/HANDOFF.md b/HANDOFF.md
-index 95768df..cc09473 100644
+index 95768df..2b27108 100644
 --- a/HANDOFF.md
 +++ b/HANDOFF.md
-@@ -147,3 +147,57 @@ Actions, но точный URL в контексте/сохранённом пр
+@@ -147,3 +147,60 @@ Actions, но точный URL в контексте/сохранённом пр
  GitHub tools. Попросить владельца создать Private repo с README через
  https://github.com/new?name=vintage-solo, предоставить доступ GitHub app и
  прислать URL. Это технически недоступная операция, не повторное согласование.
@@ -60,6 +60,9 @@ index 95768df..cc09473 100644
 +
 +CI 34466615797 compiled AI; checkstyle caught unused test import. Removed.
 +Trap test now moves cards into the actual stack zone before adding abilities.
++
++CI 34467025677 compiled production sources; test compilation caught that
++getTargetPlayers returns Iterable, not List. Fixed test access via iterator.
 diff --git a/forge-ai/src/main/java/forge/ai/AiController.java b/forge-ai/src/main/java/forge/ai/AiController.java
 index 1b8e5c4..fba8fc3 100644
 --- a/forge-ai/src/main/java/forge/ai/AiController.java
@@ -427,7 +430,7 @@ index 1d9c0d6..79eaf8b 100644
          public final String plan;
 diff --git a/forge-gui-desktop/src/test/java/forge/game/mana/VintageCardsRegressionTest.java b/forge-gui-desktop/src/test/java/forge/game/mana/VintageCardsRegressionTest.java
 new file mode 100644
-index 0000000..bf5a417
+index 0000000..52aead4
 --- /dev/null
 +++ b/forge-gui-desktop/src/test/java/forge/game/mana/VintageCardsRegressionTest.java
 @@ -0,0 +1,88 @@
@@ -463,7 +466,7 @@ index 0000000..bf5a417
 +        Assert.assertFalse(VintageCardRules.choose(p, probe));
 +        addCardToZone("Island", p, ZoneType.Library);
 +        Assert.assertTrue(VintageCardRules.choose(p, probe));
-+        Assert.assertEquals(probe.getTargets().getTargetPlayers().get(0), p.getWeakestOpponent());
++        Assert.assertEquals(probe.getTargets().getTargetPlayers().iterator().next(), p.getWeakestOpponent());
 +        AbilityUtils.resolve(probe);
 +        Assert.assertEquals(p.getCardsIn(ZoneType.Library).size(), 0);
 +        Assert.assertTrue(p.getCardsIn(ZoneType.Hand).stream().anyMatch(c -> c.getName().equals("Island")));
@@ -482,7 +485,7 @@ index 0000000..bf5a417
 +        addCardToZone("Time Walk", p.getWeakestOpponent(), ZoneType.Graveyard);
 +        SpellAbility sa = spell("Gaea's Blessing", p);
 +        Assert.assertTrue(VintageCardRules.choose(p, sa));
-+        Assert.assertEquals(sa.getTargets().getTargetPlayers().get(0), p);
++        Assert.assertEquals(sa.getTargets().getTargetPlayers().iterator().next(), p);
 +        Assert.assertEquals(sa.getSubAbility().getTargets().getTargetCards().get(0).getName(), "Atraxa, Grand Unifier");
 +        AbilityUtils.resolve(sa);
 +        Assert.assertEquals(p.getWeakestOpponent().getCardsIn(ZoneType.Graveyard).size(), 1);
