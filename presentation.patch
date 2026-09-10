@@ -1,8 +1,8 @@
 diff --git a/HANDOFF.md b/HANDOFF.md
-index 95768df..05ccfb6 100644
+index 95768df..643aea6 100644
 --- a/HANDOFF.md
 +++ b/HANDOFF.md
-@@ -147,3 +147,76 @@ Actions, но точный URL в контексте/сохранённом пр
+@@ -147,3 +147,85 @@ Actions, но точный URL в контексте/сохранённом пр
  GitHub tools. Попросить владельца создать Private repo с README через
  https://github.com/new?name=vintage-solo, предоставить доступ GitHub app и
  прислать URL. Это технически недоступная операция, не повторное согласование.
@@ -79,6 +79,15 @@ index 95768df..05ccfb6 100644
 +10 real Forge tests PASS (0 failures/errors/skips); signed APK and complete
 +offline resource integrity PASS. Android startup job pending at this point.
 +Deck image download addition is subsequent and awaits its own CI run.
++
++Run 34467498530 Android 16 startup/background resume PASS. Screenshot review
++found old smoke taps below the relocated prompt; screenshots remained on the
++AI card warning, so do NOT count this as verified game entry. Fix tap to x92%,
++y88%, remove initial left tap. Generic warning for the three newly tested
++spell policies is filtered only for specialist players; scripts and normal
++Forge AI warnings unchanged, Doomsday/Consultation warnings retained.
++Image-plan test now overrides UI status callback to avoid a null progress
++widget in its deliberately headless context.
 diff --git a/forge-ai/src/main/java/forge/ai/AiController.java b/forge-ai/src/main/java/forge/ai/AiController.java
 index 1b8e5c4..fba8fc3 100644
 --- a/forge-ai/src/main/java/forge/ai/AiController.java
@@ -96,7 +105,7 @@ index 1b8e5c4..fba8fc3 100644
              // remove added extra
              Sentry.removeExtra("Card");
 diff --git a/forge-ai/src/main/java/forge/ai/PlayerControllerAi.java b/forge-ai/src/main/java/forge/ai/PlayerControllerAi.java
-index 00e6b9f..1f79d55 100644
+index 00e6b9f..dbc7cf9 100644
 --- a/forge-ai/src/main/java/forge/ai/PlayerControllerAi.java
 +++ b/forge-ai/src/main/java/forge/ai/PlayerControllerAi.java
 @@ -565,6 +565,8 @@ public class PlayerControllerAi extends PlayerController {
@@ -108,6 +117,23 @@ index 00e6b9f..1f79d55 100644
          //TODO Add more logic for AI ordering here
  
          if (cards.isEmpty()) {
+@@ -1421,7 +1423,15 @@ public class PlayerControllerAi extends PlayerController {
+         // TODO check if profile detection set to Auto
+         setupAutoProfile(myDeck);
+ 
+-        return brains.complainCardsCantPlayWell(myDeck);
++        Map<DeckSection, List<? extends PaperCard>> warnings = brains.complainCardsCantPlayWell(myDeck);
++        if (warnings == null || !VintageStrategy.enabled(player)) return warnings;
++        Map<DeckSection, List<? extends PaperCard>> remaining = new HashMap<>();
++        for (var entry : warnings.entrySet()) {
++            List<? extends PaperCard> cards = entry.getValue().stream().filter(c ->
++                    !List.of("Gaea's Blessing", "Mindbreak Trap", "Gitaxian Probe").contains(c.getName())).toList();
++            if (!cards.isEmpty()) remaining.put(entry.getKey(), cards);
++        }
++        return remaining;
+     }
+ 
+     @Override
 diff --git a/forge-ai/src/main/java/forge/ai/vintage/OpeningHandPlanner.java b/forge-ai/src/main/java/forge/ai/vintage/OpeningHandPlanner.java
 index c5437f3..c7a5c27 100644
 --- a/forge-ai/src/main/java/forge/ai/vintage/OpeningHandPlanner.java
@@ -647,10 +673,10 @@ index 0000000..9c429ad
 +}
 diff --git a/forge-gui-desktop/src/test/java/forge/gui/download/VintageImagesRegressionTest.java b/forge-gui-desktop/src/test/java/forge/gui/download/VintageImagesRegressionTest.java
 new file mode 100644
-index 0000000..8f77887
+index 0000000..010b239
 --- /dev/null
 +++ b/forge-gui-desktop/src/test/java/forge/gui/download/VintageImagesRegressionTest.java
-@@ -0,0 +1,38 @@
+@@ -0,0 +1,39 @@
 +package forge.gui.download;
 +
 +import forge.ai.AITest;
@@ -669,6 +695,7 @@ index 0000000..8f77887
 +public class VintageImagesRegressionTest extends AITest {
 +    private static class DeckImages extends GuiDownloadFilteredCardImages {
 +        DeckImages(Set<PaperCard> cards) { super(cards, Set.of("c_1_1_spirit", "undercity")); }
++        @Override protected void reportStatus(String message) { /* No UI in this offline plan test. */ }
 +        Map<String,String> plan() throws Exception { return getNeededFiles(); }
 +    }
 +    @Test(timeOut = 30000) public void fourDecksProduceSmallExactImagePlanWithoutBulkSync() throws Exception {
