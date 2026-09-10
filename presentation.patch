@@ -1,8 +1,8 @@
 diff --git a/HANDOFF.md b/HANDOFF.md
-index 95768df..01c2fa6 100644
+index 95768df..36cfdaa 100644
 --- a/HANDOFF.md
 +++ b/HANDOFF.md
-@@ -1,149 +1,112 @@
+@@ -1,149 +1,114 @@
 -# Vintage Solo Android — HANDOFF
 -
 -Обновлено 2026-09-08. Сохранённая база Forge продолжена, повторного клонирования
@@ -153,9 +153,11 @@ index 95768df..01c2fa6 100644
 -https://github.com/new?name=vintage-solo, предоставить доступ GitHub app и
 -прислать URL. Это технически недоступная операция, не повторное согласование.
 +# Pending UI correction (2026-09-10)
-+Hand fan rotation inverted in VZoneDisplay. CardImageRenderer keeps rules text
-+on visible battlefield cards even when BehindHorz; hidden-card visibility guard
-+and other-zone overlap policy remain. No changes to card rules or bot.
++User clarified: HIDE description on battlefield, SHOW it when opening a card.
++Hand fan rotation inverted in VZoneDisplay. CardRenderer draws battlefield
++frame/art via CardImageRenderer with new hideRules flag, retaining name, mana
++cost and type. Normal zoom retains all rules. This also avoids printed rules
++from downloaded full-card scans. The prior retain-text correction was reversed.
 +Local syntax/assertion checks run; Android build and phone appearance pending.
 +
 +# Consultation update — verified build 2026-09-10
@@ -1178,23 +1180,77 @@ index ec6f78e..da10f39 100644
          }
  
 diff --git a/forge-gui-mobile/src/forge/card/CardImageRenderer.java b/forge-gui-mobile/src/forge/card/CardImageRenderer.java
-index 6abf9d8..89c6df5 100644
+index 6abf9d8..2ae551f 100644
 --- a/forge-gui-mobile/src/forge/card/CardImageRenderer.java
 +++ b/forge-gui-mobile/src/forge/card/CardImageRenderer.java
-@@ -652,9 +652,11 @@ public class CardImageRenderer {
-             drawOutlineColor(g, state.getColors(), x, y, w, h);
-         g.drawRect(BORDER_THICKNESS, Color.BLACK, x, y, w, h);
+@@ -121,6 +121,11 @@ public class CardImageRenderer {
+     }
  
--        if (!onTop) {
-+        // Battlefield cards must retain their rules even in overlapping groups.
-+        // Visibility has already been checked by drawCardImage (no hidden-card leak).
-+        if (!onTop && card.getZone() != ZoneType.Battlefield) {
-             return;
--        } //remaining rendering only needed if card on top
+     public static void drawCardImage(Graphics g, CardView card, boolean altState, float x, float y, float w, float h, CardStackPosition pos, boolean useCardBGTexture, boolean noText, boolean isChoiceList, boolean showArtist, boolean showArtBox) {
++        drawCardImage(g, card, altState, x, y, w, h, pos, useCardBGTexture, noText, isChoiceList, showArtist, showArtBox, false);
++    }
++
++    /** Compact battlefield rendering can omit rules without hiding name, mana cost or type. */
++    public static void drawCardImage(Graphics g, CardView card, boolean altState, float x, float y, float w, float h, CardStackPosition pos, boolean useCardBGTexture, boolean noText, boolean isChoiceList, boolean showArtist, boolean showArtBox, boolean hideRules) {
+         updateStaticFields(w, h);
+ 
+         float blackBorderThickness = w * BLACK_BORDER_THICKNESS_RATIO;
+@@ -228,7 +233,7 @@ public class CardImageRenderer {
+         if (isSaga) {
+             //draw text box
+             Color[] textBoxColors = FSkinColor.tintColors(Color.WHITE, colors, CardRenderer.TEXT_BOX_TINT);
+-            drawTextBox(g, card, state, textBoxColors, x + artInset, y - artHeight, (w - 2 * artInset) / 2, textBoxHeight + artHeight, onTop, useCardBGTexture, noText, altState, isFaceDown, canShow, isChoiceList, artHeight > 0);
++            drawTextBox(g, card, state, textBoxColors, x + artInset, y - artHeight, (w - 2 * artInset) / 2, textBoxHeight + artHeight, onTop, useCardBGTexture, noText || hideRules, altState, isFaceDown, canShow, isChoiceList, artHeight > 0);
+             y += textBoxHeight;
+ 
+             //draw type line
+@@ -237,7 +242,7 @@ public class CardImageRenderer {
+         } else if (isClass) {
+             //draw text box
+             Color[] textBoxColors = FSkinColor.tintColors(Color.WHITE, colors, CardRenderer.TEXT_BOX_TINT);
+-            drawTextBox(g, card, state, textBoxColors, x + artInset + (artWidth / 2), y - artHeight, (w - 2 * artInset) / 2, textBoxHeight + artHeight, onTop, useCardBGTexture, noText, altState, isFaceDown, canShow, isChoiceList, artHeight > 0);
++            drawTextBox(g, card, state, textBoxColors, x + artInset + (artWidth / 2), y - artHeight, (w - 2 * artInset) / 2, textBoxHeight + artHeight, onTop, useCardBGTexture, noText || hideRules, altState, isFaceDown, canShow, isChoiceList, artHeight > 0);
+             y += textBoxHeight;
+ 
+             //draw type line
+@@ -247,7 +252,7 @@ public class CardImageRenderer {
+             if (!drawDungeon) {
+                 //draw textbox
+                 Color[] textBoxColors = FSkinColor.tintColors(Color.WHITE, colors, CardRenderer.TEXT_BOX_TINT);
+-                drawTextBox(g, card, state, textBoxColors, x + artInset, y - artHeight, (w - 2 * artInset), textBoxHeight + artHeight, onTop, useCardBGTexture, noText, altState, isFaceDown, canShow, isChoiceList, artHeight > 0);
++                drawTextBox(g, card, state, textBoxColors, x + artInset, y - artHeight, (w - 2 * artInset), textBoxHeight + artHeight, onTop, useCardBGTexture, noText || hideRules, altState, isFaceDown, canShow, isChoiceList, artHeight > 0);
+                 y += textBoxHeight;
+             }
+             drawTypeLine(g, state, canShow, headerColors, x, y, w, typeBoxHeight, noText, false, false);
+@@ -259,7 +264,7 @@ public class CardImageRenderer {
+ 
+             //draw text box
+             Color[] textBoxColors = FSkinColor.tintColors(Color.WHITE, colors, CardRenderer.TEXT_BOX_TINT);
+-            drawTextBox(g, card, state, textBoxColors, x + artInset, y, w - 2 * artInset, textBoxHeight, onTop, useCardBGTexture, noText, altState, isFaceDown, canShow, isChoiceList, artHeight > 0);
++            drawTextBox(g, card, state, textBoxColors, x + artInset, y, w - 2 * artInset, textBoxHeight, onTop, useCardBGTexture, noText || hideRules, altState, isFaceDown, canShow, isChoiceList, artHeight > 0);
+             y += textBoxHeight;
+         }
+ 
+diff --git a/forge-gui-mobile/src/forge/card/CardRenderer.java b/forge-gui-mobile/src/forge/card/CardRenderer.java
+index 7d28b8b..c942330 100644
+--- a/forge-gui-mobile/src/forge/card/CardRenderer.java
++++ b/forge-gui-mobile/src/forge/card/CardRenderer.java
+@@ -750,7 +750,14 @@ public class CardRenderer {
+         cy = y;
+         cw = w;
+         ch = h;
+-        drawCard(g, card, x, y, w, h, pos, false, showAltState, isChoiceList, false);
++        if (card.getZone() == ZoneType.Battlefield && !stackview && !isChoiceList) {
++            // Render the frame/art separately so downloaded scans cannot expose printed rules.
++            // Zoom uses the normal full-card renderer and keeps the complete description.
++            CardImageRenderer.drawCardImage(g, card, showAltState, x, y, w, h, pos,
++                    true, false, false, !CardRendererUtils.showCardIdOverlay(card), true, true);
++        } else {
++            drawCard(g, card, x, y, w, h, pos, false, showAltState, isChoiceList, false);
 +        }
  
-         if (state != null && state.isBasicLand()) {
-             //draw watermark
+         float padding = w * PADDING_MULTIPLIER; //adjust for card border
+         x += padding;
 diff --git a/forge-gui-mobile/src/forge/menu/FMenuBar.java b/forge-gui-mobile/src/forge/menu/FMenuBar.java
 index dc08d82..11cc384 100644
 --- a/forge-gui-mobile/src/forge/menu/FMenuBar.java
@@ -2314,7 +2370,7 @@ index 722a0e5..a847709 100644
 +mvn -B -pl forge-gui-desktop -am '-Dtest=Vintage*RegressionTest' -DfailIfNoTests=false -Dsurefire.failIfNoSpecifiedTests=false test
  mvn -B -P android-test-build verify -Dandroid.sdk.path="$ANDROID_SDK_ROOT" -Dandroid.buildToolsVersion=35.0.0 -Dmaven.test.skip=true
 diff --git a/tools/vintage-solo/check.py b/tools/vintage-solo/check.py
-index afbe2bf..e55ddf3 100644
+index afbe2bf..dccce8b 100644
 --- a/tools/vintage-solo/check.py
 +++ b/tools/vintage-solo/check.py
 @@ -8,7 +8,13 @@ javac=['javac'] if shutil.which('javac') else ['java','--module','jdk.compiler/c
@@ -2332,7 +2388,7 @@ index afbe2bf..e55ddf3 100644
  forge-gui-desktop/src/main/java/forge/view/VintageBenchmark.java
  forge-gui-desktop/src/main/java/forge/view/Main.java
  forge-ai/src/main/java/forge/ai/AiController.java
-@@ -21,7 +27,20 @@ forge-gui-mobile/src/forge/Forge.java
+@@ -21,7 +27,21 @@ forge-gui-mobile/src/forge/Forge.java
  forge-gui-mobile/src/forge/assets/AssetsDownloader.java
  forge-gui-mobile/src/forge/screens/home/HomeScreen.java
  forge-gui-mobile/src/forge/screens/match/MatchScreen.java
@@ -2348,13 +2404,14 @@ index afbe2bf..e55ddf3 100644
 +forge-gui-mobile/src/forge/screens/match/views/VCardDisplayArea.java
 +forge-gui-mobile/src/forge/toolbox/FCardPanel.java
 +forge-gui-mobile/src/forge/card/CardImageRenderer.java
++forge-gui-mobile/src/forge/card/CardRenderer.java
 +forge-gui/src/main/java/forge/player/PlayerControllerHuman.java
 +forge-gui-desktop/src/test/java/forge/game/mana/VintageCardsRegressionTest.java
 +forge-gui-desktop/src/test/java/forge/game/mana/VintageManaRegressionTest.java'''.splitlines()]
  syntax=subprocess.check_output(['java','-cp',str(classes),'ParseJava',*map(str,paths)],text=True)
  index={}
  for p in (ROOT/'forge-gui/res/cardsfolder').rglob('*.txt'):
-@@ -43,6 +62,14 @@ for p in sorted((ROOT/'forge-gui/res/vintage-solo').glob('*.dck')):
+@@ -43,6 +63,14 @@ for p in sorted((ROOT/'forge-gui/res/vintage-solo').glob('*.dck')):
          assert n <= (1 if name in restricted else 99 if name in ['Plains','Island','Swamp','Mountain','Forest'] else 4),(p,name,'count illegal')
          entries.append(dict(name=name,count=n,script=str(script.relative_to(ROOT)),ai_removal_flag='RemAIDeck:True' in data, runtime='NOT TESTED'))
      decks[p.stem]=dict(total=60,unique=len(cards),cards=entries)

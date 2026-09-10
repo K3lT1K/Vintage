@@ -1,7 +1,9 @@
 # Pending UI correction (2026-09-10)
-Hand fan rotation inverted in VZoneDisplay. CardImageRenderer keeps rules text
-on visible battlefield cards even when BehindHorz; hidden-card visibility guard
-and other-zone overlap policy remain. No changes to card rules or bot.
+User clarified: HIDE description on battlefield, SHOW it when opening a card.
+Hand fan rotation inverted in VZoneDisplay. CardRenderer draws battlefield
+frame/art via CardImageRenderer with new hideRules flag, retaining name, mana
+cost and type. Normal zoom retains all rules. This also avoids printed rules
+from downloaded full-card scans. The prior retain-text correction was reversed.
 Local syntax/assertion checks run; Android build and phone appearance pending.
 
 # Consultation update — verified build 2026-09-10
