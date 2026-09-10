@@ -1,3 +1,41 @@
+# Consultation update — verified build 2026-09-10
+
+Product commit: 7c672505f20566f5e9ab77c1b0743e6b5d0f9d15.
+Actions: https://github.com/K3lT1K/Vintage/actions/runs/34482103338
+APK: https://github.com/K3lT1K/Vintage/actions/runs/34482103338/artifacts/10154438646
+Source: https://github.com/K3lT1K/Vintage/actions/runs/34482103338/artifacts/10154031346
+
+VintageConsultation is connected to VintageCardRules, AiController's own-trigger
+priority exception and Oracle permanent-spell gate, plus both card-naming
+callbacks in PlayerControllerAi. Consultation remains marked unsupported for
+generic Forge AI; the specialist has a narrow enumeration exception.
+The bot starts with Oracle and Consultation plus a joint UUB budget checked by
+Forge in both spell contexts. Nonempty opposing hands require Force of Will,
+a separate blue pitch card other than Oracle, and life. Empty opposing hands
+allow an unprotected attempt. Public locks/taxes cause a conservative hold.
+Consultation is cast only above our Oracle win trigger, never above the Oracle
+spell or an opposing response. Name Ugin, the Spirit Dragon, with registered
+deck-composition fallback; no hidden library identities/order are inspected.
+Unrelated cantrips are held in the trigger window. Enemy counters during the
+combo receive defensive priority. Normal Forge restrictions, alternate costs
+and actual payment remain in force.
+
+VERIFIED: local 20 assertions, syntax parse of 32 Java files, four 60-card lists;
+full Java/Android build; 14 runtime tests, 0 failures/errors/skips; APK signature,
+native code and bundled offline resources. New regressions cover joint mana,
+nonempty hand/protection, refusal above unresolved Oracle/enemy response,
+defensive counter targeting, actual AI selection above own Oracle trigger,
+actual Consultation naming/exile of 12 cards and Oracle victory.
+Android 16 offline startup/background-resume job 102890719068: PASS.
+No new visual review or completed match is claimed for this update.
+NOT VERIFIED: full games with the new line, matchup win rates, physical phone.
+Conservative policy can miss wins; one Force cannot guarantee a counter war.
+Sequential mana payment may not find every possible source allocation.
+The full-source artifact contains the pre-result handoff; this root file records
+the subsequent CI outcome. Build commands below still apply.
+
+## Previous verified release and broader project context (historical)
+
 # HANDOFF — 2026-09-10
 
 ## Current verified build
