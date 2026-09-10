@@ -1,98 +1,251 @@
 diff --git a/HANDOFF.md b/HANDOFF.md
-index 95768df..643aea6 100644
+index 95768df..e3a2155 100644
 --- a/HANDOFF.md
 +++ b/HANDOFF.md
-@@ -147,3 +147,85 @@ Actions, но точный URL в контексте/сохранённом пр
- GitHub tools. Попросить владельца создать Private repo с README через
- https://github.com/new?name=vintage-solo, предоставить доступ GitHub app и
- прислать URL. Это технически недоступная операция, не повторное согласование.
+@@ -1,149 +1,77 @@
+-# Vintage Solo Android — HANDOFF
+-
+-Обновлено 2026-09-08. Сохранённая база Forge продолжена, повторного клонирования
+-или переписывания движка нет. **Есть реальные изменения игры; APK не собран,
+-полная компиляция и запуск не проверены. Это не готовая игра.**
+-
+-База: https://github.com/Card-Forge/forge, commit
+-`ce5b0dbf17733847929e990c77274893223e1fa6` (Fix compile).
+-Лицензия GPL-3.0 сохранена. Исходный коммит также записан в UPSTREAM_COMMIT.txt.
+-
+-## Реализовано в вызываемом коде
+-
+-- `VintageSoloScreen` открывается из `Forge.openHomeDefault`; выбор игроком и
+-  ботом любых из Initiative / Workshop Aggro / Oath, включая зеркала.
+-- Три настоящих main deck по 60 карт в `forge-gui/res/vintage-solo/`, без
+-  сайдборда. Источники и дата в SOURCES.md, отдельный скрипт проверки карт.
+-- Экран валидирует колоды через Forge и запускает обычный HostedMatch.
+-  Один game, ante/cheat shuffle/filtered hands/AI sideboarding выключены.
+-  Основное меню ограничено этим режимом, внутренние карты/режимы не удалены.
+-- `VintageSolo` помечает профиль в Deck.aiHints. `PlayerControllerAi` вызывает
+-  профильный mulligan и bottom; `AiController` вызывает выбор земли, сортировку
+-  действий, поиск и выбор цели Swords; `CounterAi` — приоритет ключевых угроз.
+-- `OpeningHandPlanner`: ограниченный перебор вариантов London bottom до 10 карт.
+-  `VintageStrategy`: отдельные ветви профилей, приоритеты маны/налогов/движка,
+-  поправки матчапов, повторная оценка текущего поля и стека при каждом вызове.
+-  `VintageRemoval`: узкая корректировка цели Swords вне боевого стека.
+-  Не подходящие правила возвращают управление штатному ИИ; платежи остаются Forge.
+-- Причины пишутся в GameLog с `[Vintage AI]`, доступный и копируемый после партии.
+-- Android: отдельный package `forge.vintage.solo`, landscape, свой тёмный стол,
+-  экран выбора для пальца, переключатели текстовых карт и автопередачи приоритета,
+-  убраны задержки фаз/разрешения. Остальное управление боя/зон/стека — мобильный Forge.
+-- `VintageResources` устанавливает вложенные ресурсы до загрузки скина вне
+-  Android UI-потока, в app-private storage; успешная версия отмечается маркером.
+-  `AssetsDownloader` пропускает обновления для такого пакета. Сборщик ZIP
+-  сохраняет все внутренние карточные скрипты и ресурсы, без извлечения Arena assets.
+-  Изменённые API чтения файлов совместимы с minSdk 26. Фактический офлайн-запуск
+-  ещё не проверен. В manifest отключён upstream Sentry DSN.
+-- `VintageBenchmark`, вызываемый CLI Main, и Python runner для настоящих партий
+-  Forge. Обмен первым игроком, baseline/specialist, фиксированный seed; один
+-  процесс на game, ERROR/TIMEOUT отдельно от ничьих. Стенд пока не запускался.
+-- Готовый ручной workflow `.github/workflows/vintage-android.yml`, локальные
+-  `bootstrap.sh`, `build.sh`, `check_apk.py`, подробная инструкция в
+-  `tools/vintage-solo/README.md`. Workflow не отправлен/не запущен в GitHub.
+-
+-## Проверено фактически
+-
+-Команда `python3 tools/vintage-solo/check.py`:
+-
+-- Компиляция двух production-классов без зависимостей и запуск **18 assertions**:
+-  mulligan/bottom, цветовая манапроблема, Academy без артефактов, возврат Atraxa,
+-  корректная/повторная/неполная установка ресурсов и недопустимый ZIP-путь.
+-- Синтаксический разбор **14 Java-файлов интеграции**, без type checking.
+-- Три колоды по 60 карт, наличие скрипта каждой карты, отсутствие превышения
+-  restricted/copy limits и banned inclusions по Vintage-данным базового Forge.
+-  У выбранных скриптов нет RemAIDeck:True. Это НЕ доказывает работоспособность.
+-- Сверен официальный Vintage banned/restricted list на странице Wizards,
+-  источники списков сохранены. Перед матчем также встроена runtime-валидация.
+-- `bash -n` скриптов сборки и `git diff --check`.
+-- Сборка ZIP ресурсов Python выполнена; это ресурсный архив, НЕ APK.
+-
+-Отчёт: `tools/vintage-solo/reports/local-checks.json`.
+-
+-**Полных партий: 0. Сравнительных партий: 0. APK: 0. Запусков Android: 0.**
+-По всем девяти упорядоченным матчапам, включая зеркала и оба первых игрока,
+-результат одинаков: НЕ ПРОВЕРЕНО. Нет измеренного винрейта/улучшения над Forge.
+-
+-## Среда и блокеры
+-
+-Java 17.0.20 и jdk.compiler присутствуют; бинарного javac нет, доступен запуск
+-компилятора через `java --module jdk.compiler/com.sun.tools.javac.Main`.
+-Maven, SDK, adb/sdkmanager и подходящие кеши не найдены. Локальная установка
+-Maven/SDK проверялась без apt/sudo: загрузки остановлены сетевым механизмом
+-с `network approval was cancelled before a decision was returned`.
+-Не предпринимались обходы запретов. Адреса всех зависимостей в README.
+-Разработка продолжилась несмотря на блокер; типовые проверки всего проекта
+-без транзитивных Maven dependencies выполнить нельзя.
+-
+-## Как продолжить
+-
+-1. Прочитать `tools/vintage-solo/README.md`. Установить JDK17; запустить локальный
+-   bootstrap или workflow в собственном GitHub fork. Внешний запуск здесь не выполнен.
+-2. Собрать исходный Android APK на pinned upstream отдельно как контроль,
+-   затем изменённый: `source .vintage-tools/env.sh` и
+-   `xvfb-run -a bash tools/vintage-solo/build.sh`.
+-   Исправить реальные ошибки компиляции/упаковки, если выявятся.
+-3. `python3 tools/vintage-solo/check_apk.py`; установить подписанный APK и
+-   проверить запуск в авиарежиме, первую партию и сворачивание. Не считать
+-   проверку manifest/signature подтверждением запуска.
+-4. Собрать desktop jar и выполнить `benchmark.py --jar ... --seeds 101 202 303`.
+-   Запланировано 162 game; агрегатор сохраняет логи, ошибки, статистику. Сначала
+-   прогнать одну конфигурацию напрямую через vintage-bench и проверить assets.
+-5. Добавить реальные GameState/Forge тесты оплаты Workshop/Sphere/Trinisphere,
+-   стека, Oath/Orchard, lethal/блокирования. Текущие локальные тесты этого не заменяют.
+-6. По реальным логам исправить правила. Только после сравнения называть бота
+-   усиленным. Завершить общий анализ позиции, короткий поиск последовательностей,
+-   политику сохранения маны, все зеркальные поправки, аудит fallback hidden info.
+-7. Завершить и проверить мобильный UX и восстановление после убийства процесса.
+-   Сворачивание использует существующий HostedMatch pause/resume и ещё не проверено.
+-
+-## Известные ограничения
+-
+-- Полной специализированной логики боя/комбо/оплаты нет: это штатный Forge.
+-  Общий short-sequence search не реализован; есть только перебор London bottom.
+-- Начальная мана оценивается эвристикой двух ходов: не считать это точной
+-  оплатой со всеми ограничениями/цветами. Forge проверяет оплату во время игры.
+-- Специализированные правила не читают скрытую руку соперника или порядок
+-  библиотек; полный аудит всех ветвей исходного ИИ остаётся необходимым.
+-- Изменения UI проверены чтением исходников, не рендером/эмулятором.
+-- Resource bundle заметно увеличивает APK и первый запуск; нужны измерения
+-  размера/времени/памяти на устройстве. Сжатый ZIP генерируется сборкой, в исходный
+-  архив не включён; все исходные ресурсы включены.
+-- Профиль android-test-build подписывает публичным debug key. Это личная сборка,
+-  не публикация в магазине. Публикация/отправка исходников наружу не выполнялась.
+-
+-## Состав передачи
+-
+-Полный исходный архив содержит tracked upstream-файлы и все изменения/новые
+-файлы, включая workflow, тесты, отчёт, эту инструкцию и GPL. История .git,
+-локальные caches/classes, сгенерированный ресурсный ZIP исключены.
+-Дополнительно сохранён patch всех изменений относительно UPSTREAM_COMMIT.txt.
+-
+-
+-## Продолжение: цель только APK, без новых игровых функций
+-
+-Проверены workflow и BUILD.md. Обновлён только build/verification pipeline:
+-clean перед Maven install, сохранение bootstrap/build logs, отдельный artifact
+-только с прошедшим проверку APK, SHA256 и отчётом. Проверка включает подпись,
+-package, launcher, DEX, native LibGDX, CRC и точный состав offline ZIP.
+-Добавлен push-trigger только для codex/vintage-apk; ручной запуск сохранён.
+-Изменения pipeline проверены синтаксически, реальный APK пока отсутствует.
+-
+-GitHub plugin подключён: профиль K3lT1K. list_repositories,
+-list_repositories_by_affiliation(owner), list_installed_accounts вернули пустые
+-списки. Пользователь разрешил загрузку в указанный им репозиторий и запуск
+-Actions, но точный URL в контексте/сохранённом проекте/поиске прошлой переписки
+-не найден. Единственный origin — upstream Card-Forge/forge; туда ничего не
+-загружалось. Перед дальнейшей работой получить URL выбранного репозитория и
+-доступ установленного приложения к нему. Пошаговые действия в BUILD.md.
+-После получения этих данных не запрашивать разрешение на загрузку/сборку заново.
+-Продолжать сборку, читать логи, исправлять только блокирующие APK ошибки.
+-
+-Фактические статусы неизменны: APK 0, Android launch 0, полных партий 0,
+-профильный бот в игре не проверен. Новые игровые функции не добавлялись.
+-
+-Последнее уточнение пользователя: разрешил новый репозиторий, имя неважно.
+-Выбрано vintage-solo; операция создания репозитория отсутствует среди доступных
+-GitHub tools. Попросить владельца создать Private repo с README через
+-https://github.com/new?name=vintage-solo, предоставить доступ GitHub app и
+-прислать URL. Это технически недоступная операция, не повторное согласование.
++# Current delta: Consultation / Oracle (2026-09-10)
++New source: VintageConsultation.java, integrated into spell choice, own-trigger
++priority and naming callbacks. Oracle-first protected line; absent name from
++registered deck; joint UUB budget; conservative public lock checks; enemy
++counter priority. Added three runtime regressions covering exile/win, stack
++window and mana/protection. Local 20 assertions and 32 Java syntax checks pass.
++CI build/runtime tests for this delta are pending. Earlier APK below does not
++include this delta. No full games or phone test of the new combo yet.
 +
++# HANDOFF — 2026-09-10
 +
-+## 2026-09-09 presentation and mana batch
-+- Existing pacing retained: 1000 ms after bot land/spell, 500 ms per bot step, game thread only.
-+- Gear menu nests Game/Players/Log; stack is a three-card fan at -15/0/+15 degrees with live count.
-+- Landscape battlefield places lands on right, other permanents on left; card height 0.60 field height instead of 0.50. Portrait hand area +12%.
-+- Russian coverage: 67 deck cards + reverse face + Undercity/tokens/effects. Custom translations preserve English names. Roboto replaces unsupported skin font for Russian, with locale-versioned font cache.
-+- Floating mana blocks implicit no-action/phase-skip passes when stack empty. Explicit end-turn yields still honored. Normal step/phase mana clearing unchanged. Original phone issue not reproduced yet.
-+- Added VintageManaRegressionTest covering 3->2->1, preview/taxes, Workshop restrictions. Tests are run in build.sh after Maven install.
-+- Local checks: 18 assertions and Java syntax parsing; no local Maven/Android SDK. Android compile/runtime and mana test results pending CI. No complete games or bot benchmark performed.
-+- Reproduction: apply original patch, overlay fixes, run build_fixes.py (also applies presentation.patch), then bootstrap.sh/build.sh/check_apk.py as in repository BUILD.md.
++## Current verified build
 +
-+Follow-up verification: first batch compiled all modules; test invocation needed -am to resolve Forge parent revision in reactor. Next run executed four mana tests: three passed; the direct-payment test incorrectly bypassed CostAdjustment for the taxed second spell. Corrected fixture to use the actual adjustment stage. No engine-loss bug reproduced. Added permanent top-bar mana counts; corrected Russian custom-font routing to always use bundled Roboto; enabled existing manual mana-loss confirmation. Added live-card Russian text test.
++- Repository: https://github.com/K3lT1K/Vintage
++- Build commit: `bf59a65e167e4a04fc496a59f34c0431e04c79c0`.
++- Successful build AND Android startup: https://github.com/K3lT1K/Vintage/actions/runs/34469122372
++- Signed APK: https://github.com/K3lT1K/Vintage/actions/runs/34469122372/artifacts/10149070267
++- Complete restored Forge sources: https://github.com/K3lT1K/Vintage/actions/runs/34469122372/artifacts/10148783056
++- Android screenshots/logcat: https://github.com/K3lT1K/Vintage/actions/runs/34469122372/artifacts/10149302081
++- Pinned upstream Forge: `ce5b0dbf17733847929e990c77274893223e1fa6`.
++- APK package `forge.vintage.solo`, launcher `forge.app.Launcher`, main activity `forge.app.Main`.
++- Debug signed using upstream uber-apk-signer key; signature, launcher, DEX, native libraries, ZIP CRC and complete offline resource hash/file inventory passed.
 +
++## Implemented
 +
-+## 2026-09-10 local card-table redesign (not yet built)
-+This section supersedes the earlier lands-on-right layout. Current user request:
-+lands LEFT, creatures CENTER, noncreature artifacts and enchantments RIGHT.
-+VField now uses three real FieldRows; attached auras/equipment remain with their
-+host through VCardDisplayArea's existing attachment rendering, so land auras
-+stay left. Artifact creatures are classified as creatures. Animated lands
-+also move to the creature area while creatures. No rule-engine changes here.
-+New local presentation also includes a bottom hand fan, compact avatar/zone
-+HUD, optional phase controls in the gear menu, and bottom-right action buttons.
-+Syntax checks now cover the four newly edited UI classes too.
-+Not yet checked: Android compilation or rendering/touch interaction for this
-+new layout. Do not deliver the preceding APK as containing this redesign.
-+Previously verified build de56002d7e5f2c1128220b813900a8ea444e07f1, run
-+34362031674: five mana/Russian runtime tests passed, signed APK/offline bundle
-+verified, emulator launch and game entry passed. Complete games and bot
-+comparison remain unverified. Remote newer gear-only commit:
-+5aa7b58a201d634f0829af8ce38a561676ca58f3 (not this local redesign).
-+Next: review UI, batch presentation.patch and startup touch coordinates, run CI
-+and inspect screenshots. Do not push each small edit. Exclude unrelated
-+adventure-editor/tools/gdx-particle-editor.jar and generated local-checks.json
-+from presentation.patch.
++Four selectable 60-card decks for either player, including mirrors: Initiative, Workshop, Oath, Doomsday. Doomsday is SingPanMan's 2026-08-23 Vintage Challenge list, main deck only:
++https://www.mtggoldfish.com/deck/download/7923523
 +
-+## 2026-09-10 four-deck / specialist policy batch
-+User now requests Doomsday as FOURTH deck and explicitly asks to push batch.
-+New classes VintageCardRules and VintageDoomsday are wired into AiController
-+and PlayerControllerAi, not placeholders. See tools/vintage-solo/DOOMSDAY.md
-+for exact source, policy and limitations. Five additional runtime scenarios
-+added; pending CI. Local 18 assertions / 28 syntax parses / four 60-card decks
-+pass. Full compilation and new UI rendering still pending at upload time.
-+Do not remove AI warning flags merely to conceal unsupported generic behavior.
++VintageCardRules is invoked from AiController.canPlaySa. Forge retains timing, restrictions, targets, costs and actual payment. Gaea's Blessing targets self and recycles useful cards; Probe cantrips against empty hands but avoids empty library/draw locks; Trap targets legal hostile spells, can exile multiple spells, and refuses empty or low-value uses. Normal Forge remains fallback. Generic unsupported-card warnings for these three are filtered only for specialist players; card scripts and ordinary Forge AI warnings remain unchanged.
 +
-+CI 34466155391 caught Java overload ambiguity in Card::getName comparator.
-+Fixed with explicit Card lambda. Follow-up batch also fixes double-localized
-+phase captions, prevents post-pile cycling/fetching, includes all 84 Russian
-+card translations and extends opening-hand checks to black/blue Doomsday mana.
-+Local 20 assertions and 28 syntax parses pass. Runtime tests pending rerun.
++Doomsday has its own mulligan/mana priorities, legal search selections and ordering callback in PlayerControllerAi. Conservative pass-turn pile: Recall, Lotus, Oracle, Force, Ponder. Public locks, life after halving, blue land and known missing roles are checked. No concealed opposing hand or library order is read by these policies. Post-pile fetch activations and cycling are held. Only this pile is implemented; Demonic Consultation is deliberately not cast by the bot. Doomsday/Consultation warnings remain. This is not a verified strong Doomsday pilot.
 +
-+CI 34466615797 compiled AI; checkstyle caught unused test import. Removed.
-+Trap test now moves cards into the actual stack zone before adding abilities.
++Landscape card table: lands left; creatures centrally; noncreature artifacts/enchantments right; attached auras/equipment stay with host. Fan hand below; compact life/zone HUD; optional phase stops under gear; Game/Players/Log under gear, separate stack fan. Pacing retained: 1000 ms after bot land/spell, 500 ms per bot step/phase, off UI thread.
 +
-+CI 34467025677 compiled production sources; test compilation caught that
-+getTargetPlayers returns Iterable, not List. Fixed test access via iterator.
++Floating mana blocks implicit no-action/phase-skip passes on an empty stack, with existing manual mana-loss confirmation enabled. Normal rules for clearing mana between steps/phases remain. The original phone report was not reproduced as an engine subtraction bug.
 +
-+## Deck-only image downloads (latest user steering)
-+New Картинки колод button gathers exact printings from ALL FOUR deck lists,
-+deduplicates, includes back faces and required tokens. Added explicit-list
-+constructor to the existing GuiDownloadFilteredCardImages: no all-card scan,
-+no set synchronization or bulk metadata download. Existing cached files skipped.
-+GuiDownloader has compact progress/cancel mode; downloads remain opt-in, on
-+background worker, text cards still work offline. Actual remote image transfer
-+not tested here. Added offline plan regression: 84 distinct card names, <=100
-+files for its two-token fixture, no bulk/ZIP URL, cached file omitted on retry.
-+Production queue also includes the remaining relevant token scripts.
++Russian text covers all 84 distinct deck cards plus reverse face and support tokens/effects; original English names retained. Custom translations, not claimed official. Bundled Roboto supports Cyrillic. Downloaded printed images can be English; translated rule text remains available in the client.
 +
-+Verified run 34467498530 / commit 4a6acb829742c36fd09335240a7febec8f8c6161:
-+10 real Forge tests PASS (0 failures/errors/skips); signed APK and complete
-+offline resource integrity PASS. Android startup job pending at this point.
-+Deck image download addition is subsequent and awaits its own CI run.
++Картинки колод gathers exact PaperCard printings from ALL FOUR lists, removes duplicates, includes back faces and needed token images. Explicit-list GuiDownloadFilteredCardImages path does not enumerate all printings, synchronize sets or download bulk metadata. Existing files skipped; compact background progress/cancel dialog. Cache persists for offline use. Text-card mode remains usable without images.
 +
-+Run 34467498530 Android 16 startup/background resume PASS. Screenshot review
-+found old smoke taps below the relocated prompt; screenshots remained on the
-+AI card warning, so do NOT count this as verified game entry. Fix tap to x92%,
-+y88%, remove initial left tap. Generic warning for the three newly tested
-+spell policies is filtered only for specialist players; scripts and normal
-+Forge AI warnings unchanged, Doomsday/Consultation warnings retained.
-+Image-plan test now overrides UI status callback to avoid a null progress
-+widget in its deliberately headless context.
++## Actually checked
++
++- 20 local assertions; syntax parsing of 31 Java files.
++- Four decks: 60 cards each; scripts present, counts/B&R checked against pinned Forge data. This is not a separate current WotC legality audit.
++- Russian coverage and Oracle mana-symbol preservation.
++- Full compilation and Checkstyle.
++- 11 real Forge tests: 5 mana/Russian tests; 5 card-policy/effect tests; 1 image-plan/cache test. Final run: 0 failures, 0 errors, 0 skips; no headless status-widget exception.
++- Image test constructs a small exact-printing queue (<=100 files in its two-token fixture), verifies no bulk/ZIP URL and skips an existing file; it does NOT download remote images.
++- Android 16 API36 x86_64 emulator: clean install, offline first launch, 180-second survival, HOME/resume, game entry and gear menu; no detected FATAL/ANR.
++- Visually reviewed first-launch, match-4 and match-settings screenshots: download button, actual seven-card fan, opponent land left, noncreature artifact right, open gear menu. Bot actions progressed between captures.
++
++## Not checked / limitations
++
++- Physical OnePlus 13 / OxygenOS 16 on this build.
++- Actual image transfer from Scryfall/CardForge on the phone; optional illustrations require internet once.
++- Completed automated full games: **0**. All 16 ordered deck pairings / first-player swaps remain to be run.
++- Specialist vs baseline win-rate comparison: **not run**. No claim of higher human win rate.
++- All combat/stack interactions, all Doomsday piles, tutor/protection variations and long-game stability.
++- Precise pacing on physical phone; recovery of a game after process death (not implemented).
++
++## Reproduction and continuation
++
++See BUILD.md for exact commands. Restore in order:
++1. Checkout pinned upstream Forge.
++2. Apply `vintage-solo.patch`.
++3. Copy `fixes/` overlay.
++4. Run `build_fixes.py`, which applies `presentation.patch` LAST.
++5. Run bootstrap.sh, build.sh and check_apk.py.
++
++Do not apply patches again to the complete source artifact. Tools pinned by bootstrap: Maven 3.8.1, Android CLI 11076708, platform35/build-tools35.0.0, Forge Android Maven plugin4.6.2, JDK17. Main test command:
++`mvn -B -pl forge-gui-desktop -am '-Dtest=Vintage*RegressionTest' -DfailIfNoTests=false -Dsurefire.failIfNoSpecifiedTests=false test`
++
++Current startup smoke taps the relocated confirmation at x92%, y88%, then gear at x98%, y3%. Earlier runs survived but remained on a modal due wrong coordinates; only the final screenshot review above establishes game entry.
++
++Earlier CI issues fixed: overloaded Card::getName method reference, unused test import, Iterable target access, actual stack-zone setup in Trap test, and UI progress callback in a deliberately headless image-plan test. No test gates were disabled.
++
++Next useful work: user phone verification and image download; finish full games with all four decks and both first-player assignments, measure bot comparisons, extend Doomsday lines based on reproducible failures. Batch changes; don't push each small edit. Root HANDOFF is newer than the historical source-artifact snapshot written before CI completed.
 diff --git a/forge-ai/src/main/java/forge/ai/AiController.java b/forge-ai/src/main/java/forge/ai/AiController.java
-index 1b8e5c4..fba8fc3 100644
+index 1b8e5c4..3aebe8e 100644
 --- a/forge-ai/src/main/java/forge/ai/AiController.java
 +++ b/forge-ai/src/main/java/forge/ai/AiController.java
-@@ -910,7 +910,10 @@ public class AiController {
+@@ -891,6 +891,11 @@ public class AiController {
+         }
+ 
+         final Card card = sa.getHostCard();
++        if (sa.isSpell() && card.getName().equals("Thassa's Oracle")
++                && forge.ai.vintage.VintageConsultation.enabled(player)
++                && !Boolean.TRUE.equals(forge.ai.vintage.VintageDoomsday.choose(player, sa))) {
++            return AiPlayDecision.CantPlayAi;
++        }
+ 
+         // Trying to play a card that has Buyback without a Buyback cost, look for possible additional considerations
+         if (getBoolProperty(AiProps.TRY_TO_PRESERVE_BUYBACK_SPELLS) && card.hasKeyword(Keyword.BUYBACK)
+@@ -910,7 +915,10 @@ public class AiController {
              Sentry.setExtra("Card", card.getName());
              Sentry.setExtra("SA", sa.toString());
  
@@ -104,8 +257,29 @@ index 1b8e5c4..fba8fc3 100644
  
              // remove added extra
              Sentry.removeExtra("Card");
+@@ -1542,7 +1550,8 @@ public class AiController {
+         // Must respond: cases where the AI should respond to its own triggers or other abilities (need to add negative stuff to be countered here)
+         boolean mustRespond = false;
+         if (top != null) {
+-            mustRespond = top.hasParam("AIRespondsToOwnAbility"); // Forced combos (currently defined for Sensei's Divining Top)
++            mustRespond = forge.ai.vintage.VintageConsultation.respondToOwnTrigger(player, top);
++            mustRespond |= top.hasParam("AIRespondsToOwnAbility"); // Forced combos (currently defined for Sensei's Divining Top)
+             mustRespond |= top.isTrigger() && top.getTrigger().isKeyword(Keyword.EVOKE); // Evoke sacrifice trigger
+         }
+ 
+@@ -1575,7 +1584,9 @@ public class AiController {
+         saList.removeIf(spellAbility -> {
+             // don't include removedAI cards if somehow the AI can play the ability or gain control of unsupported card
+             // TODO allow when experimental profile?
+-            return spellAbility.isLandAbility() || (spellAbility.getHostCard() != null && ComputerUtilCard.isCardRemAIDeck(spellAbility.getHostCard()));
++            return spellAbility.isLandAbility() || (spellAbility.getHostCard() != null && (ComputerUtilCard.isCardRemAIDeck(spellAbility.getHostCard())
++                    && !(forge.ai.vintage.VintageConsultation.enabled(player)
++                    && spellAbility.getHostCard().getName().equals("Demonic Consultation"))));
+         });
+         //removed skipped SA
+         skipped = saList.stream().filter(SpellAbility::isSkip).collect(Collectors.toList());
 diff --git a/forge-ai/src/main/java/forge/ai/PlayerControllerAi.java b/forge-ai/src/main/java/forge/ai/PlayerControllerAi.java
-index 00e6b9f..dbc7cf9 100644
+index 00e6b9f..ffb397d 100644
 --- a/forge-ai/src/main/java/forge/ai/PlayerControllerAi.java
 +++ b/forge-ai/src/main/java/forge/ai/PlayerControllerAi.java
 @@ -565,6 +565,8 @@ public class PlayerControllerAi extends PlayerController {
@@ -134,6 +308,22 @@ index 00e6b9f..dbc7cf9 100644
      }
  
      @Override
+@@ -1475,11 +1485,15 @@ public class PlayerControllerAi extends PlayerController {
+ 
+     @Override
+     public String chooseCardName(SpellAbility sa, List<ICardFace> faces, String message) {
++        String comboName = forge.ai.vintage.VintageConsultation.name(player, sa);
++        if (comboName != null) return comboName;
+         return SpellApiToAi.Converter.get(sa).chooseCardName(player, sa, faces);
+     }
+ 
+     @Override
+     public String chooseCardName(SpellAbility sa, Predicate<ICardFace> cpp, String valid, String message) {
++        String comboName = forge.ai.vintage.VintageConsultation.name(player, sa);
++        if (comboName != null) return comboName;
+         if (sa.hasParam("AILogic")) {
+             CardCollectionView aiLibrary = player.getCardsIn(ZoneType.Library);
+             CardCollectionView oppLibrary = player.getStrongestOpponent().getCardsIn(ZoneType.Library);
 diff --git a/forge-ai/src/main/java/forge/ai/vintage/OpeningHandPlanner.java b/forge-ai/src/main/java/forge/ai/vintage/OpeningHandPlanner.java
 index c5437f3..c7a5c27 100644
 --- a/forge-ai/src/main/java/forge/ai/vintage/OpeningHandPlanner.java
@@ -192,10 +382,10 @@ index c5437f3..c7a5c27 100644
                  if (oath > 0 && green > 0 && mana >= 2) { score += 18; }
 diff --git a/forge-ai/src/main/java/forge/ai/vintage/VintageCardRules.java b/forge-ai/src/main/java/forge/ai/vintage/VintageCardRules.java
 new file mode 100644
-index 0000000..b4f7214
+index 0000000..bb066ad
 --- /dev/null
 +++ b/forge-ai/src/main/java/forge/ai/vintage/VintageCardRules.java
-@@ -0,0 +1,114 @@
+@@ -0,0 +1,116 @@
 +package forge.ai.vintage;
 +
 +import forge.game.card.Card;
@@ -218,6 +408,8 @@ index 0000000..b4f7214
 +                return result(p, "preserve-pile", false, "do not cycle or fetch-shuffle the established pile");
 +            return null;
 +        }
++        Boolean combo = VintageConsultation.choose(p, sa);
++        if (combo != null) return combo;
 +        return switch (sa.getHostCard().getName()) {
 +            case "Gaea's Blessing" -> blessing(p, sa);
 +            case "Gitaxian Probe" -> probe(p, sa);
@@ -310,9 +502,121 @@ index 0000000..b4f7214
 +        return sa.getHostCard().getCMC() >= 3 ? 60 : 10;
 +    }
 +}
+diff --git a/forge-ai/src/main/java/forge/ai/vintage/VintageConsultation.java b/forge-ai/src/main/java/forge/ai/vintage/VintageConsultation.java
+new file mode 100644
+index 0000000..c0908c1
+--- /dev/null
++++ b/forge-ai/src/main/java/forge/ai/vintage/VintageConsultation.java
+@@ -0,0 +1,106 @@
++package forge.ai.vintage;
++
++import forge.ai.ComputerUtilMana;
++import forge.card.mana.ManaCost;
++import forge.card.mana.ManaCostParser;
++import forge.deck.VintageSolo.Archetype;
++import forge.game.ability.ApiType;
++import forge.game.card.Card;
++import forge.game.mana.ManaCostBeingPaid;
++import forge.game.player.Player;
++import forge.game.spellability.SpellAbility;
++import forge.game.zone.ZoneType;
++import java.util.List;
++
++/** Oracle first, Consultation only above its win trigger. No concealed cards inspected. */
++public final class VintageConsultation {
++    private VintageConsultation() { }
++    public static boolean enabled(Player p) {
++        return VintageStrategy.enabled(p) && VintageStrategy.profile(p) == Archetype.DOOMSDAY;
++    }
++    public static String absentName(Player p) {
++        // Registered composition, not the hidden library. These names also avoid our tokens.
++        for (String name : List.of("Ugin, the Spirit Dragon", "Mountain", "Forest"))
++            if (p.getRegisteredPlayer().getDeck().getMain().countByName(name) == 0) return name;
++        return null;
++    }
++    public static String name(Player p, SpellAbility sa) {
++        return enabled(p) && sa.getHostCard().getName().equals("Demonic Consultation") ? absentName(p) : null;
++    }
++    private static boolean oracleAbility(Player p, SpellAbility sa) {
++        if (sa == null || sa.isSpell() || !p.equals(sa.getActivatingPlayer())
++                || !sa.getHostCard().getName().equals("Thassa's Oracle")) return false;
++        for (SpellAbility part = sa; part != null; part = part.getSubAbility())
++            if (part.getApi() == ApiType.WinsGame) return true;
++        return false;
++    }
++    public static boolean respondToOwnTrigger(Player p, SpellAbility top) {
++        return enabled(p) && oracleAbility(p, top);
++    }
++    private static boolean locked(Player p) {
++        // Conservative: taxes and multi-spell limits need a different joint payment plan.
++        for (String n : List.of("Torpor Orb", "Hushbringer", "Hushwing Gryff", "Dress Down",
++                "Humility", "Archon of Emeria", "Rule of Law", "Deafening Silence", "Eidolon of Rhetoric",
++                "Ethersworn Canonist", "Sphere of Resistance", "Thorn of Amethyst", "Trinisphere",
++                "Thalia, Guardian of Thraben", "Vexing Bauble", "Lavinia, Azorius Renegade",
++                "Angel's Grace", "Platinum Angel", "Gideon of the Trials"))
++            if (VintageCardRules.publicCard(p, n)) return true;
++        return false;
++    }
++    private static Card inHand(Player p, String n) {
++        return p.getCardsIn(ZoneType.Hand).stream().filter(c -> c.getName().equals(n)).findFirst().orElse(null);
++    }
++    private static boolean protectedWindow(Player p) {
++        // Even a tapped-out opponent may hold Force: only an empty hand is clearly safe.
++        if (p.getOpponents().stream().allMatch(o -> o.getCardsIn(ZoneType.Hand).isEmpty())) return true;
++        Card force = inHand(p, "Force of Will");
++        return force != null && p.getLife() > 1 && p.getCardsIn(ZoneType.Hand).stream().anyMatch(c ->
++                c != force && c.isBlue() && !c.getName().equals("Thassa's Oracle"));
++    }
++    public static boolean canStart(Player p, SpellAbility oracle) {
++        if (!enabled(p) || locked(p) || absentName(p) == null || !protectedWindow(p)
++                || !p.getGame().getStack().isEmpty()) return false;
++        Card consultation = inHand(p, "Demonic Consultation");
++        if (consultation == null) return false;
++        SpellAbility consult = consultation.getFirstSpellAbility().copy();
++        consult.setActivatingPlayer(p);
++        // Check the JOINT colored budget in both spell contexts, excluding sources restricted
++        // to creatures or artifacts. The actual two payments are still made by Forge.
++        ManaCostBeingPaid joint = new ManaCostBeingPaid(new ManaCost(new ManaCostParser("U U B")));
++        return ComputerUtilMana.canPayManaCost(joint, oracle, p, false)
++                && ComputerUtilMana.canPayManaCost(joint, consult, p, false);
++    }
++    public static Boolean choose(Player p, SpellAbility sa) {
++        if (!enabled(p)) return null;
++        String n = sa.getHostCard().getName();
++        if (n.equals("Demonic Consultation")) {
++            boolean play = !locked(p) && absentName(p) != null && !p.getCardsIn(ZoneType.Library).isEmpty()
++                    && !p.getGame().getStack().isEmpty()
++                    && oracleAbility(p, p.getGame().getStack().peekAbility()) && protectedWindow(p);
++            VintageStrategy.log(p, "consultation-window", play
++                    ? "exile library above resolved Oracle's win trigger; name " + absentName(p)
++                    : "hold: need own Oracle win trigger on top, protection and no public lock");
++            return play;
++        }
++        // Protect either combo spell / its trigger, and our counters during that same fight.
++        if (sa.getApi() == ApiType.Counter && comboOnStack(p)) {
++            SpellAbility top = p.getGame().getStack().peekAbility();
++            if (top != null && top.getActivatingPlayer() != null && top.getActivatingPlayer().isOpponentOf(p)
++                    && top.getApi() == ApiType.Counter && top.isCounterableBy(sa) && sa.canTarget(top)) {
++                sa.resetTargets();
++                sa.getTargets().add(top);
++                VintageStrategy.log(p, "consultation-protection", "counter enemy response to combo; Forge validates costs");
++                return true;
++            }
++        }
++        return null;
++    }
++    private static boolean comboOnStack(Player p) {
++        for (var item : p.getGame().getStack()) {
++            SpellAbility sa = item.getSpellAbility();
++            if (p.equals(sa.getActivatingPlayer()) && (oracleAbility(p, sa)
++                    || (sa.isSpell() && List.of("Thassa's Oracle", "Demonic Consultation").contains(sa.getHostCard().getName())))) return true;
++        }
++        return false;
++    }
++}
 diff --git a/forge-ai/src/main/java/forge/ai/vintage/VintageDoomsday.java b/forge-ai/src/main/java/forge/ai/vintage/VintageDoomsday.java
 new file mode 100644
-index 0000000..3eb0553
+index 0000000..033a4a3
 --- /dev/null
 +++ b/forge-ai/src/main/java/forge/ai/vintage/VintageDoomsday.java
 @@ -0,0 +1,95 @@
@@ -339,8 +643,8 @@ index 0000000..3eb0553
 +    public static Boolean choose(Player p, SpellAbility sa) {
 +        if (VintageStrategy.profile(p) != Archetype.DOOMSDAY) return null;
 +        String n = sa.getHostCard().getName();
-+        if (n.equals("Demonic Consultation")) return decision(p, false, "no verified Consultation naming line; preserve library");
-+        if (n.equals("Thassa's Oracle")) return decision(p, p.getCardsIn(ZoneType.Library).size() <= 2 && !locked(p), "Oracle only with at most two cards and no public combo lock");
++
++        if (n.equals("Thassa's Oracle")) return decision(p, (p.getCardsIn(ZoneType.Library).size() <= 2 && !locked(p)) || VintageConsultation.canStart(p, sa), "Oracle win or protected Consultation window with joint UUB budget");
 +        if (inPile(p)) {
 +            if (n.equals("Ancestral Recall")) {
 +                sa.resetTargets();
@@ -405,7 +709,7 @@ index 0000000..3eb0553
 +    }
 +    public static VintageStrategy.Priority priority(Player p, SpellAbility sa) {
 +        String n = sa.getHostCard().getName();
-+        int value = n.equals("Thassa's Oracle") && inPile(p) ? 120
++        int value = n.equals("Thassa's Oracle") && (inPile(p) || VintageConsultation.canStart(p, sa)) ? 120
 +                : n.equals("Ancestral Recall") && inPile(p) ? 110
 +                : n.equals("Doomsday") ? 70 : n.equals("Gitaxian Probe") ? 65 : 0;
 +        return new VintageStrategy.Priority(value, "doomsday-sequence", "protection and legal pile progression");
@@ -472,10 +776,10 @@ index 1d9c0d6..79eaf8b 100644
          public final String plan;
 diff --git a/forge-gui-desktop/src/test/java/forge/game/mana/VintageCardsRegressionTest.java b/forge-gui-desktop/src/test/java/forge/game/mana/VintageCardsRegressionTest.java
 new file mode 100644
-index 0000000..52aead4
+index 0000000..5047921
 --- /dev/null
 +++ b/forge-gui-desktop/src/test/java/forge/game/mana/VintageCardsRegressionTest.java
-@@ -0,0 +1,88 @@
+@@ -0,0 +1,150 @@
 +package forge.game.mana;
 +
 +import forge.ai.AITest;
@@ -562,6 +866,68 @@ index 0000000..52aead4
 +                List.of("Ancestral Recall", "Black Lotus", "Thassa's Oracle", "Force of Will", "Ponder"));
 +        Assert.assertEquals(p.getLife(), 10);
 +        Assert.assertEquals(p.getCardsIn(ZoneType.Exile).size(), 5);
++    }
++
++    private SpellAbility oracleTrigger(Player p) {
++        var oracle = addCard("Thassa's Oracle", p);
++        SpellAbility trigger = forge.game.ability.AbilityFactory.getAbility(oracle, "TrigDig");
++        trigger.setActivatingPlayer(p);
++        p.getGame().getStack().add(trigger);
++        return trigger;
++    }
++    @Test public void consultationRequiresOracleTriggerAndActuallyEmptiesLibraryForWin() {
++        Game game = initAndCreateGame();
++        Player p = setup(game, VintageSolo.Archetype.DOOMSDAY);
++        SpellAbility consult = spell("Demonic Consultation", p);
++        for (int i = 0; i < 12; i++) addCardToZone("Island", p, ZoneType.Library);
++        Assert.assertFalse(VintageCardRules.choose(p, consult));
++        SpellAbility trigger = oracleTrigger(p);
++        Assert.assertTrue(forge.ai.vintage.VintageConsultation.respondToOwnTrigger(p, trigger));
++        Assert.assertTrue(VintageCardRules.choose(p, consult));
++        AbilityUtils.resolve(consult);
++        Assert.assertEquals(consult.getHostCard().getNamedCard(), "Ugin, the Spirit Dragon");
++        Assert.assertEquals(p.getCardsIn(ZoneType.Library).size(), 0);
++        Assert.assertEquals(p.getCardsIn(ZoneType.Exile).size(), 12);
++        AbilityUtils.resolve(trigger);
++        Assert.assertTrue(p.hasWon());
++    }
++    @Test public void consultationNeverExilesUnderUnresolvedOracleSpellOrEnemyResponse() {
++        Game game = initAndCreateGame();
++        Player p = setup(game, VintageSolo.Archetype.DOOMSDAY);
++        SpellAbility consult = spell("Demonic Consultation", p);
++        addCardToZone("Island", p, ZoneType.Library);
++        SpellAbility oracle = spell("Thassa's Oracle", p);
++        oracle.setHostCard(game.getAction().moveToStack(oracle.getHostCard(), oracle));
++        game.getStack().add(oracle);
++        Assert.assertFalse(VintageCardRules.choose(p, consult));
++        oracleTrigger(p);
++        SpellAbility enemy = spell("Counterspell", p.getWeakestOpponent());
++        enemy.getTargets().add(oracle);
++        enemy.setHostCard(game.getAction().moveToStack(enemy.getHostCard(), enemy));
++        game.getStack().add(enemy);
++        Assert.assertFalse(VintageCardRules.choose(p, consult));
++        SpellAbility force = spell("Force of Will", p);
++        Assert.assertTrue(VintageCardRules.choose(p, force));
++        Assert.assertEquals(force.getTargets().getTargetSpells().iterator().next(), enemy);
++    }
++    @Test public void oracleNeedsJointColoredBudgetAndProtectionAgainstNonemptyHand() {
++        Game game = initAndCreateGame();
++        Player p = setup(game, VintageSolo.Archetype.DOOMSDAY);
++        SpellAbility oracle = spell("Thassa's Oracle", p);
++        spell("Demonic Consultation", p);
++        addCard("Island", p);
++        addCard("Island", p);
++        Assert.assertFalse(forge.ai.vintage.VintageConsultation.canStart(p, oracle));
++        addCard("Swamp", p);
++        Assert.assertTrue(forge.ai.vintage.VintageConsultation.canStart(p, oracle));
++        spell("Forest", p.getWeakestOpponent()); // identity irrelevant, only hand count is read
++        Assert.assertFalse(forge.ai.vintage.VintageConsultation.canStart(p, oracle));
++        spell("Force of Will", p);
++        Assert.assertFalse(forge.ai.vintage.VintageConsultation.canStart(p, oracle)); // never pitch Oracle
++        spell("Ponder", p);
++        Assert.assertTrue(forge.ai.vintage.VintageConsultation.canStart(p, oracle));
++        addCard("Rule of Law", p);
++        Assert.assertFalse(forge.ai.vintage.VintageConsultation.canStart(p, oracle));
 +    }
 +}
 diff --git a/forge-gui-desktop/src/test/java/forge/game/mana/VintageManaRegressionTest.java b/forge-gui-desktop/src/test/java/forge/game/mana/VintageManaRegressionTest.java
@@ -1800,10 +2166,10 @@ index 0b45b86..d7493e1 100644
      public void autoPassUntilEndOfTurn() {
 diff --git a/tools/vintage-solo/DOOMSDAY.md b/tools/vintage-solo/DOOMSDAY.md
 new file mode 100644
-index 0000000..6d329e9
+index 0000000..8fd4307
 --- /dev/null
 +++ b/tools/vintage-solo/DOOMSDAY.md
-@@ -0,0 +1,33 @@
+@@ -0,0 +1,45 @@
 +# Doomsday: source and current limits
 +
 +Fourth selectable deck for both players, including mirrors. Exact 60-card main
@@ -1818,7 +2184,7 @@ index 0000000..6d329e9
 +Forge search and reverse insertion order. It checks known missing roles, blue
 +land, public locks and worst-case opposing power against remaining life.
 +It cannot predict concealed answers. Other Doomsday piles are not implemented.
-+Demonic Consultation is held rather than guessing a dangerous name. This limits
++Historical limitation before the Consultation update: Demonic Consultation was held rather than guessing a dangerous name. This limits
 +bot strength. Do not claim a win rate or full support until matches are measured.
 +All 84 distinct main-deck cards have Russian text with original English names;
 +new translations are custom, not claimed as official printed text. No card scripts or rules modified for AI convenience.
@@ -1837,6 +2203,18 @@ index 0000000..6d329e9
 +
 +Tests: VintageCardsRegressionTest plus VintageManaRegressionTest. CI command:
 +mvn -B -pl forge-gui-desktop -am '-Dtest=Vintage*RegressionTest' -DfailIfNoTests=false -Dsurefire.failIfNoSpecifiedTests=false test
++
++## Consultation line (2026-09-10)
++VintageConsultation now permits Oracle first with Consultation in hand and a
++joint UUB budget checked by Forge in both spell contexts. It holds against
++public taxes/locks; with nonempty enemy hands it requires Force of Will,
++a spare blue card other than Oracle, and life for the alternate cost.
++Consultation is only cast above our Oracle win trigger, never above the
++unresolved creature spell or an enemy response. Name Ugin, the Spirit Dragon
++(or a fallback absent from the registered list), using no library inspection.
++Enemy counters during the combo receive protection priority; final payment
++and target legality remain with Forge. One Force is not a guarantee against
++multiple opposing answers. This conservative line may miss available wins.
 diff --git a/tools/vintage-solo/TRANSLATION.md b/tools/vintage-solo/TRANSLATION.md
 new file mode 100644
 index 0000000..9f52030
@@ -1877,10 +2255,10 @@ index 722a0e5..a847709 100644
 +mvn -B -pl forge-gui-desktop -am '-Dtest=Vintage*RegressionTest' -DfailIfNoTests=false -Dsurefire.failIfNoSpecifiedTests=false test
  mvn -B -P android-test-build verify -Dandroid.sdk.path="$ANDROID_SDK_ROOT" -Dandroid.buildToolsVersion=35.0.0 -Dmaven.test.skip=true
 diff --git a/tools/vintage-solo/check.py b/tools/vintage-solo/check.py
-index afbe2bf..8247e0b 100644
+index afbe2bf..f1b68f7 100644
 --- a/tools/vintage-solo/check.py
 +++ b/tools/vintage-solo/check.py
-@@ -8,7 +8,12 @@ javac=['javac'] if shutil.which('javac') else ['java','--module','jdk.compiler/c
+@@ -8,7 +8,13 @@ javac=['javac'] if shutil.which('javac') else ['java','--module','jdk.compiler/c
  subprocess.run([*javac,'-encoding','UTF-8','-d',str(classes),str(ROOT/'forge-ai/src/main/java/forge/ai/vintage/OpeningHandPlanner.java'),str(ROOT/'forge-core/src/main/java/forge/util/VintageResources.java'),str(ROOT/'tools/vintage-solo/tests/LocalChecks.java'),str(ROOT/'tools/vintage-solo/tests/ParseJava.java')],check=True)
  checks=subprocess.check_output(['java','-cp',str(classes),'LocalChecks'],text=True)
  # Parse actual integration files even when Maven dependencies are unavailable.
@@ -1890,11 +2268,12 @@ index afbe2bf..8247e0b 100644
 +forge-gui-mobile/src/forge/screens/settings/GuiDownloader.java
 +forge-ai/src/main/java/forge/ai/vintage/VintageCardRules.java
 +forge-ai/src/main/java/forge/ai/vintage/VintageDoomsday.java
++forge-ai/src/main/java/forge/ai/vintage/VintageConsultation.java
 +forge-ai/src/main/java/forge/ai/vintage/VintageRemoval.java
  forge-gui-desktop/src/main/java/forge/view/VintageBenchmark.java
  forge-gui-desktop/src/main/java/forge/view/Main.java
  forge-ai/src/main/java/forge/ai/AiController.java
-@@ -21,7 +26,19 @@ forge-gui-mobile/src/forge/Forge.java
+@@ -21,7 +27,19 @@ forge-gui-mobile/src/forge/Forge.java
  forge-gui-mobile/src/forge/assets/AssetsDownloader.java
  forge-gui-mobile/src/forge/screens/home/HomeScreen.java
  forge-gui-mobile/src/forge/screens/match/MatchScreen.java
@@ -1915,7 +2294,7 @@ index afbe2bf..8247e0b 100644
  syntax=subprocess.check_output(['java','-cp',str(classes),'ParseJava',*map(str,paths)],text=True)
  index={}
  for p in (ROOT/'forge-gui/res/cardsfolder').rglob('*.txt'):
-@@ -43,6 +60,14 @@ for p in sorted((ROOT/'forge-gui/res/vintage-solo').glob('*.dck')):
+@@ -43,6 +61,14 @@ for p in sorted((ROOT/'forge-gui/res/vintage-solo').glob('*.dck')):
          assert n <= (1 if name in restricted else 99 if name in ['Plains','Island','Swamp','Mountain','Forest'] else 4),(p,name,'count illegal')
          entries.append(dict(name=name,count=n,script=str(script.relative_to(ROOT)),ai_removal_flag='RemAIDeck:True' in data, runtime='NOT TESTED'))
      decks[p.stem]=dict(total=60,unique=len(cards),cards=entries)
