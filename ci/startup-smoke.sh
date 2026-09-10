@@ -46,7 +46,7 @@ for n in 1 2 3 4; do
   sleep 4
   adb exec-out screencap -p > "startup/match-$n.png"
 done
-adb shell input tap "$((SCREEN_W * 96 / 100))" "$((SCREEN_H * 3 / 100))"
+adb shell input tap "$((SCREEN_W * 98 / 100))" "$((SCREEN_H * 3 / 100))"
 sleep 3
 adb exec-out screencap -p > startup/match-settings.png
 adb shell pidof forge.vintage.solo

@@ -240,7 +240,7 @@ index dc08d82..8969459 100644
  
      @Override
 diff --git a/forge-gui-mobile/src/forge/menu/FMenuTab.java b/forge-gui-mobile/src/forge/menu/FMenuTab.java
-index e0d93a9..dd03269 100644
+index e0d93a9..83a6148 100644
 --- a/forge-gui-mobile/src/forge/menu/FMenuTab.java
 +++ b/forge-gui-mobile/src/forge/menu/FMenuTab.java
 @@ -18,6 +18,10 @@ public class FMenuTab extends FDisplayObject {
@@ -262,14 +262,20 @@ index e0d93a9..dd03269 100644
          if (iconOnly) {
              float multiplier = Forge.isLandscapeMode() ? 2.5f : 1.8f;
              return FONT.getLineHeight() * multiplier;
-@@ -186,7 +191,22 @@ public class FMenuTab extends FDisplayObject {
+@@ -186,7 +191,28 @@ public class FMenuTab extends FDisplayObject {
              }
          }
  
 -        if (iconOnly) {
 +        if (matchIcon == 1) {
 +            float size = Math.min(w, h) * 0.8f;
-+            g.drawImage(FSkinImage.SETTINGS, x + (w-size)/2, y + (h-size)/2, size, size);
++            float cx = x + w/2, cy = y + h/2;
++            for (int angle = 0; angle < 360; angle += 45) {
++                g.startRotateTransform(cx, cy, angle);
++                g.fillRect(getSelForeColor(), cx-size*0.10f, cy-size*0.49f, size*0.20f, size*0.24f);
++                g.endTransform();
++            }
++            g.drawCircle(Math.max(1, size*0.15f), getSelForeColor(), cx, cy, size*0.29f);
 +        } else if (matchIcon == 2) {
 +            float ch = h * 0.65f, cw = ch * 0.68f;
 +            float cx = x + w * 0.43f, cy = y + h * 0.63f;
