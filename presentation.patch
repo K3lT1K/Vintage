@@ -1,8 +1,8 @@
 diff --git a/HANDOFF.md b/HANDOFF.md
-index 95768df..36cfdaa 100644
+index 95768df..21748dc 100644
 --- a/HANDOFF.md
 +++ b/HANDOFF.md
-@@ -1,149 +1,114 @@
+@@ -1,149 +1,123 @@
 -# Vintage Solo Android — HANDOFF
 -
 -Обновлено 2026-09-08. Сохранённая база Forge продолжена, повторного клонирования
@@ -152,6 +152,15 @@ index 95768df..36cfdaa 100644
 -GitHub tools. Попросить владельца создать Private repo с README через
 -https://github.com/new?name=vintage-solo, предоставить доступ GitHub app и
 -прислать URL. Это технически недоступная операция, не повторное согласование.
++# Amber UI update (2026-09-10)
++FButton now uses a shared orange/copper renderer outside Adventure. Prompt
++buttons reuse it (secondary remains dark). 180ms ForgeAnimation press/release
++pulse with visual inset; input command dispatch is unchanged and never sleeps.
++Match table and player trays use warm stone/brown tones, retaining zone layout.
++Previous reverse fan + hidden battlefield descriptions are retained.
++Local checks: 20 assertions, 35 Java syntax parses, four 60-card decks, diff clean.
++Android compilation and phone visual review pending for this update.
++
 +# Pending UI correction (2026-09-10)
 +User clarified: HIDE description on battlefield, SHOW it when opening a card.
 +Hand fan rotation inverted in VZoneDisplay. CardRenderer draws battlefield
@@ -1381,7 +1390,7 @@ index e0d93a9..83a6148 100644
              FImage icon = active ? FSkinImage.SEE : FSkinImage.UNSEE;
              float scaleW = w * 0.8f;
 diff --git a/forge-gui-mobile/src/forge/screens/match/MatchScreen.java b/forge-gui-mobile/src/forge/screens/match/MatchScreen.java
-index 289e78b..e53fe78 100644
+index 289e78b..ceb212a 100644
 --- a/forge-gui-mobile/src/forge/screens/match/MatchScreen.java
 +++ b/forge-gui-mobile/src/forge/screens/match/MatchScreen.java
 @@ -162,15 +162,15 @@ public class MatchScreen extends FScreen {
@@ -1475,11 +1484,11 @@ index 289e78b..e53fe78 100644
 -                g.drawLine(1f, new com.badlogic.gdx.graphics.Color(0.55f, 0.43f, 0.25f, 0.7f),
 -                        0, getHeight() / 2f, getWidth(), getHeight() / 2f);
 +                float w = getWidth(), h = getHeight();
-+                g.fillRect(new com.badlogic.gdx.graphics.Color(0.025f, 0.032f, 0.045f, 1), 0, 0, w, h);
-+                g.fillRect(new com.badlogic.gdx.graphics.Color(0.06f, 0.10f, 0.12f, 1), w*0.02f, h*0.02f, w*0.96f, h*0.96f);
-+                g.drawRect(1.5f, new com.badlogic.gdx.graphics.Color(0.42f, 0.32f, 0.18f, 0.85f), w*0.02f, h*0.02f, w*0.96f, h*0.96f);
-+                g.fillCircle(new com.badlogic.gdx.graphics.Color(0.08f, 0.14f, 0.16f, 0.28f), w*0.47f, h*0.42f, h*0.37f);
-+                g.drawCircle(1, new com.badlogic.gdx.graphics.Color(0.58f, 0.46f, 0.28f, 0.16f), w*0.47f, h*0.43f, h*0.26f);
++                g.fillRect(new com.badlogic.gdx.graphics.Color(0.06f, 0.04f, 0.028f, 1), 0, 0, w, h);
++                g.fillRect(new com.badlogic.gdx.graphics.Color(0.26f, 0.19f, 0.135f, 1), w*0.02f, h*0.02f, w*0.96f, h*0.96f);
++                g.drawRect(1.5f, new com.badlogic.gdx.graphics.Color(0.70f, 0.34f, 0.12f, 0.85f), w*0.02f, h*0.02f, w*0.96f, h*0.96f);
++                g.fillCircle(new com.badlogic.gdx.graphics.Color(0.46f, 0.32f, 0.20f, 0.28f), w*0.47f, h*0.42f, h*0.37f);
++                g.drawCircle(1, new com.badlogic.gdx.graphics.Color(0.9f, 0.49f, 0.2f, 0.16f), w*0.47f, h*0.43f, h*0.26f);
 +                g.drawLine(1, new com.badlogic.gdx.graphics.Color(0.65f, 0.52f, 0.30f, 0.22f), w*0.08f, h*0.43f, w*0.92f, h*0.43f);
                  return;
              }
@@ -1605,7 +1614,7 @@ index 95152eb..8869638 100644
      }
  
 diff --git a/forge-gui-mobile/src/forge/screens/match/views/VPlayerPanel.java b/forge-gui-mobile/src/forge/screens/match/views/VPlayerPanel.java
-index 69f8c6d..321a724 100644
+index 69f8c6d..4c90127 100644
 --- a/forge-gui-mobile/src/forge/screens/match/views/VPlayerPanel.java
 +++ b/forge-gui-mobile/src/forge/screens/match/views/VPlayerPanel.java
 @@ -84,11 +84,56 @@ public class VPlayerPanel extends FContainer {
@@ -1687,11 +1696,11 @@ index 69f8c6d..321a724 100644
      @Override
      public void drawBackground(Graphics g) {
 +        if (isTableLayout()) {
-+            g.drawRect(1.5f, new com.badlogic.gdx.graphics.Color(0.64f, 0.49f, 0.25f, 0.85f),
++            g.drawRect(1.5f, new com.badlogic.gdx.graphics.Color(0.92f, 0.45f, 0.15f, 0.85f),
 +                    avatar.getLeft()-2, avatar.getTop()-2, avatar.getWidth()+4, avatar.getHeight()+4);
 +            if (selectedTab != null && selectedTab != zoneTabs.get(ZoneType.Hand)) {
 +                VDisplayArea area = selectedTab.getDisplayArea();
-+                if (area != null) g.fillRect(new com.badlogic.gdx.graphics.Color(0.025f, 0.035f, 0.055f, 0.96f),
++                if (area != null) g.fillRect(new com.badlogic.gdx.graphics.Color(0.065f, 0.045f, 0.03f, 0.96f),
 +                        area.getLeft(), area.getTop(), area.getWidth(), area.getHeight());
 +            }
 +            if (!isBottomPlayer) {
@@ -1699,7 +1708,7 @@ index 69f8c6d..321a724 100644
 +                float h = avatar.getHeight() * 0.80f, w = h * 0.70f;
 +                for (int i = 0; i < count; i++) {
 +                    float x = getWidth()*0.19f + i*w*0.55f;
-+                    g.fillRect(new com.badlogic.gdx.graphics.Color(0.10f, 0.16f, 0.22f, 1), x, 3, w, h);
++                    g.fillRect(new com.badlogic.gdx.graphics.Color(0.23f, 0.12f, 0.065f, 1), x, 3, w, h);
 +                    g.drawRect(1, new com.badlogic.gdx.graphics.Color(0.58f, 0.46f, 0.27f, 1), x, 3, w, h);
 +                }
 +            }
@@ -1724,7 +1733,7 @@ index 69f8c6d..321a724 100644
              float divider = Gdx.app.getGraphics().getHeight() > 900 ? 1.2f : 2f;
              if (Forge.altPlayerLayout && !Forge.altZoneTabs && Forge.isLandscapeMode()) {
 diff --git a/forge-gui-mobile/src/forge/screens/match/views/VPrompt.java b/forge-gui-mobile/src/forge/screens/match/views/VPrompt.java
-index 6b8e457..a93e0c9 100644
+index 6b8e457..b088739 100644
 --- a/forge-gui-mobile/src/forge/screens/match/views/VPrompt.java
 +++ b/forge-gui-mobile/src/forge/screens/match/views/VPrompt.java
 @@ -50,8 +50,8 @@ public class VPrompt extends FContainer {
@@ -1738,7 +1747,7 @@ index 6b8e457..a93e0c9 100644
          btnOk.setSize(BTN_WIDTH, HEIGHT);
          btnCancel.setSize(BTN_WIDTH, HEIGHT);
          btnOk.setCorner(Corner.BottomLeft);
-@@ -87,23 +87,48 @@ public class VPrompt extends FContainer {
+@@ -87,23 +87,40 @@ public class VPrompt extends FContainer {
  
      @Override
      protected void doLayout(float width, float height) {
@@ -1767,7 +1776,7 @@ index 6b8e457..a93e0c9 100644
      protected void drawBackground(Graphics g) {
 -        g.fillRect(getBackColor(), 0, 0, getWidth(), getHeight());
 +        if (Forge.isLandscapeMode() && !Forge.isMobileAdventureMode)
-+            g.fillRect(new com.badlogic.gdx.graphics.Color(0.025f, 0.035f, 0.05f, 1), 0, 0, getWidth(), getHeight());
++            g.fillRect(new com.badlogic.gdx.graphics.Color(0.055f, 0.035f, 0.025f, 1), 0, 0, getWidth(), getHeight());
 +        else g.fillRect(getBackColor(), 0, 0, getWidth(), getHeight());
      }
      
@@ -1776,16 +1785,8 @@ index 6b8e457..a93e0c9 100644
 +        TableButton(String text, FEventHandler handler, boolean primary) { super(text, handler); this.primary = primary; }
 +        @Override public void draw(Graphics g) {
 +            if (!Forge.isLandscapeMode() || Forge.isMobileAdventureMode) { super.draw(g); return; }
-+            com.badlogic.gdx.graphics.Color background = isEnabled()
-+                    ? (primary ? new com.badlogic.gdx.graphics.Color(0.10f, 0.35f, 0.44f, 1) : new com.badlogic.gdx.graphics.Color(0.18f, 0.20f, 0.23f, 1))
-+                    : new com.badlogic.gdx.graphics.Color(0.09f, 0.11f, 0.14f, 1);
-+            g.fillRect(background, 0, 0, getWidth(), getHeight());
-+            g.drawRect(isEnabled() ? 2 : 1, new com.badlogic.gdx.graphics.Color(0.66f, 0.53f, 0.31f, isEnabled() ? 1 : 0.3f),
-+                    0, 0, getWidth(), getHeight());
 +            String label = "OK".equalsIgnoreCase(getText()) ? "Далее" : getText();
-+            g.drawText(label, FSkinFont.forHeight(getHeight()*0.38f),
-+                    isEnabled() ? com.badlogic.gdx.graphics.Color.WHITE : com.badlogic.gdx.graphics.Color.GRAY,
-+                    4, 0, getWidth()-8, getHeight(), true, Align.center, true);
++            drawWarmButton(g, primary, label);
 +        }
 +    }
 +
@@ -2011,6 +2012,85 @@ index 5815b06..bfa6dcd 100644
 +        pictures.setBounds(width * .74f, height - pad - row, width * .24f - pad, row);
      }
  }
+diff --git a/forge-gui-mobile/src/forge/toolbox/FButton.java b/forge-gui-mobile/src/forge/toolbox/FButton.java
+index 4160865..5a10b09 100644
+--- a/forge-gui-mobile/src/forge/toolbox/FButton.java
++++ b/forge-gui-mobile/src/forge/toolbox/FButton.java
+@@ -1,6 +1,8 @@
+ package forge.toolbox;
+ 
+ import com.badlogic.gdx.utils.Timer;
++import com.badlogic.gdx.graphics.Color;
++import forge.animation.ForgeAnimation;
+ import org.apache.commons.lang3.StringUtils;
+ 
+ import com.badlogic.gdx.Input.Keys;
+@@ -34,6 +36,41 @@ public class FButton extends FDisplayObject implements IButton {
+     private FSkinColor foreColor = getDefaultForeColor();
+     private boolean toggled = false;
+     private boolean pressed = false;
++    private float warmPulse;
++    private final ForgeAnimation warmAnimation = new ForgeAnimation() {
++        @Override protected boolean advance(float dt) {
++            warmPulse = Math.max(0, warmPulse - dt / 0.18f);
++            return warmPulse > 0;
++        }
++        @Override protected void onEnd(boolean endingAll) { warmPulse = 0; }
++    };
++    private void animateWarmPress() {
++        if (!Forge.isMobileAdventureMode && isEnabled()) {
++            warmPulse = 1;
++            warmAnimation.start();
++        }
++    }
++    /** Shared amber buttons; animation never delays command dispatch. */
++    protected final void drawWarmButton(Graphics g, boolean primary, String label) {
++        float inset = pressed ? 2 : warmPulse;
++        float x = 2 + inset, y = 2 + inset;
++        float w = Math.max(0, getWidth() - 4 - 2 * inset);
++        float h = Math.max(0, getHeight() - 5 - 2 * inset);
++        boolean active = isEnabled();
++        Color edge = active ? new Color(1f, 0.48f, 0.12f, 1) : new Color(0.29f, 0.25f, 0.21f, 1);
++        Color face = !active ? new Color(0.12f, 0.10f, 0.09f, 1)
++                : primary || toggled ? new Color(0.66f + warmPulse * 0.18f, 0.24f + warmPulse * 0.13f, 0.055f, 1)
++                : new Color(0.17f + warmPulse * 0.13f, 0.115f + warmPulse * 0.06f, 0.08f, 1);
++        g.fillRect(new Color(0, 0, 0, 0.55f), x, y + 3, w, h);
++        g.fillRect(face, x, y, w, h);
++        g.drawRect(active ? 1.5f : 1, edge, x, y, w, h);
++        g.drawLine(1, new Color(1, 0.75f, 0.40f, active ? 0.6f : 0.12f), x + 2, y + 2, x + w - 2, y + 2);
++        if (active && warmPulse > 0) {
++            g.fillRect(new Color(1, 0.65f, 0.25f, warmPulse * 0.16f), x, y, w, h);
++        }
++        g.drawText(label, font, active ? new Color(1, 0.94f, 0.82f, 1) : Color.GRAY,
++                x + 6, y, Math.max(0, w - 12), h, true, Align.center, true);
++    }
+     private FEventHandler command;
+ 
+     public enum Corner {
+@@ -201,6 +238,7 @@ public class FButton extends FDisplayObject implements IButton {
+     @Override
+     public final boolean press(float x, float y) {
+         pressed = true;
++        animateWarmPress();
+         if (isToggled()) { return true; }
+         imgL = FSkinImage.BTN_DOWN_LEFT;
+         imgM = FSkinImage.BTN_DOWN_CENTER;
+@@ -225,6 +263,7 @@ public class FButton extends FDisplayObject implements IButton {
+     @Override
+     public final boolean release(float x, float y) {
+         pressed = false;
++        animateWarmPress();
+         if (isToggled()) { return true; }
+         resetImg();
+         return true;
+@@ -260,6 +299,7 @@ public class FButton extends FDisplayObject implements IButton {
+ 
+     @Override
+     public void draw(Graphics g) {
++        if (!Forge.isMobileAdventureMode) { drawWarmButton(g, true, text); return; }
+         float x = 0;
+         float y = 0;
+         float w = getWidth();
 diff --git a/forge-gui-mobile/src/forge/toolbox/FCardPanel.java b/forge-gui-mobile/src/forge/toolbox/FCardPanel.java
 index 1ded0c1..525ecfe 100644
 --- a/forge-gui-mobile/src/forge/toolbox/FCardPanel.java
@@ -2370,7 +2450,7 @@ index 722a0e5..a847709 100644
 +mvn -B -pl forge-gui-desktop -am '-Dtest=Vintage*RegressionTest' -DfailIfNoTests=false -Dsurefire.failIfNoSpecifiedTests=false test
  mvn -B -P android-test-build verify -Dandroid.sdk.path="$ANDROID_SDK_ROOT" -Dandroid.buildToolsVersion=35.0.0 -Dmaven.test.skip=true
 diff --git a/tools/vintage-solo/check.py b/tools/vintage-solo/check.py
-index afbe2bf..dccce8b 100644
+index afbe2bf..706fd27 100644
 --- a/tools/vintage-solo/check.py
 +++ b/tools/vintage-solo/check.py
 @@ -8,7 +8,13 @@ javac=['javac'] if shutil.which('javac') else ['java','--module','jdk.compiler/c
@@ -2388,7 +2468,7 @@ index afbe2bf..dccce8b 100644
  forge-gui-desktop/src/main/java/forge/view/VintageBenchmark.java
  forge-gui-desktop/src/main/java/forge/view/Main.java
  forge-ai/src/main/java/forge/ai/AiController.java
-@@ -21,7 +27,21 @@ forge-gui-mobile/src/forge/Forge.java
+@@ -21,7 +27,22 @@ forge-gui-mobile/src/forge/Forge.java
  forge-gui-mobile/src/forge/assets/AssetsDownloader.java
  forge-gui-mobile/src/forge/screens/home/HomeScreen.java
  forge-gui-mobile/src/forge/screens/match/MatchScreen.java
@@ -2403,6 +2483,7 @@ index afbe2bf..dccce8b 100644
 +forge-gui-mobile/src/forge/screens/match/views/VZoneDisplay.java
 +forge-gui-mobile/src/forge/screens/match/views/VCardDisplayArea.java
 +forge-gui-mobile/src/forge/toolbox/FCardPanel.java
++forge-gui-mobile/src/forge/toolbox/FButton.java
 +forge-gui-mobile/src/forge/card/CardImageRenderer.java
 +forge-gui-mobile/src/forge/card/CardRenderer.java
 +forge-gui/src/main/java/forge/player/PlayerControllerHuman.java
@@ -2411,7 +2492,7 @@ index afbe2bf..dccce8b 100644
  syntax=subprocess.check_output(['java','-cp',str(classes),'ParseJava',*map(str,paths)],text=True)
  index={}
  for p in (ROOT/'forge-gui/res/cardsfolder').rglob('*.txt'):
-@@ -43,6 +63,14 @@ for p in sorted((ROOT/'forge-gui/res/vintage-solo').glob('*.dck')):
+@@ -43,6 +64,14 @@ for p in sorted((ROOT/'forge-gui/res/vintage-solo').glob('*.dck')):
          assert n <= (1 if name in restricted else 99 if name in ['Plains','Island','Swamp','Mountain','Forest'] else 4),(p,name,'count illegal')
          entries.append(dict(name=name,count=n,script=str(script.relative_to(ROOT)),ai_removal_flag='RemAIDeck:True' in data, runtime='NOT TESTED'))
      decks[p.stem]=dict(total=60,unique=len(cards),cards=entries)

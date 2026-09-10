@@ -1,3 +1,12 @@
+# Amber UI update (2026-09-10)
+FButton now uses a shared orange/copper renderer outside Adventure. Prompt
+buttons reuse it (secondary remains dark). 180ms ForgeAnimation press/release
+pulse with visual inset; input command dispatch is unchanged and never sleeps.
+Match table and player trays use warm stone/brown tones, retaining zone layout.
+Previous reverse fan + hidden battlefield descriptions are retained.
+Local checks: 20 assertions, 35 Java syntax parses, four 60-card decks, diff clean.
+Android compilation and phone visual review pending for this update.
+
 # Pending UI correction (2026-09-10)
 User clarified: HIDE description on battlefield, SHOW it when opening a card.
 Hand fan rotation inverted in VZoneDisplay. CardRenderer draws battlefield
