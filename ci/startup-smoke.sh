@@ -41,8 +41,10 @@ read -r SCREEN_W SCREEN_H < <(python3 -c 'import struct; print(*struct.unpack(">
 adb shell input tap "$((SCREEN_W / 2))" "$((SCREEN_H * 86 / 100))"
 sleep 25
 adb exec-out screencap -p > startup/match-opening.png
+adb shell input tap "$((SCREEN_W * 8 / 100))" "$((SCREEN_H * 88 / 100))"
+sleep 4
 for n in 1 2 3 4; do
-  adb shell input tap "$((SCREEN_W * 8 / 100))" "$((SCREEN_H * 88 / 100))"
+  adb shell input tap "$((SCREEN_W * 92 / 100))" "$((SCREEN_H * 94 / 100))"
   sleep 4
   adb exec-out screencap -p > "startup/match-$n.png"
 done
