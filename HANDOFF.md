@@ -1,3 +1,9 @@
+# Pending UI correction (2026-09-10)
+Hand fan rotation inverted in VZoneDisplay. CardImageRenderer keeps rules text
+on visible battlefield cards even when BehindHorz; hidden-card visibility guard
+and other-zone overlap policy remain. No changes to card rules or bot.
+Local syntax/assertion checks run; Android build and phone appearance pending.
+
 # Consultation update — verified build 2026-09-10
 
 Product commit: 7c672505f20566f5e9ab77c1b0743e6b5d0f9d15.

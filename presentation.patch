@@ -1,8 +1,8 @@
 diff --git a/HANDOFF.md b/HANDOFF.md
-index 95768df..e3a2155 100644
+index 95768df..01c2fa6 100644
 --- a/HANDOFF.md
 +++ b/HANDOFF.md
-@@ -1,149 +1,77 @@
+@@ -1,149 +1,112 @@
 -# Vintage Solo Android — HANDOFF
 -
 -Обновлено 2026-09-08. Сохранённая база Forge продолжена, повторного клонирования
@@ -152,14 +152,49 @@ index 95768df..e3a2155 100644
 -GitHub tools. Попросить владельца создать Private repo с README через
 -https://github.com/new?name=vintage-solo, предоставить доступ GitHub app и
 -прислать URL. Это технически недоступная операция, не повторное согласование.
-+# Current delta: Consultation / Oracle (2026-09-10)
-+New source: VintageConsultation.java, integrated into spell choice, own-trigger
-+priority and naming callbacks. Oracle-first protected line; absent name from
-+registered deck; joint UUB budget; conservative public lock checks; enemy
-+counter priority. Added three runtime regressions covering exile/win, stack
-+window and mana/protection. Local 20 assertions and 32 Java syntax checks pass.
-+CI build/runtime tests for this delta are pending. Earlier APK below does not
-+include this delta. No full games or phone test of the new combo yet.
++# Pending UI correction (2026-09-10)
++Hand fan rotation inverted in VZoneDisplay. CardImageRenderer keeps rules text
++on visible battlefield cards even when BehindHorz; hidden-card visibility guard
++and other-zone overlap policy remain. No changes to card rules or bot.
++Local syntax/assertion checks run; Android build and phone appearance pending.
++
++# Consultation update — verified build 2026-09-10
++
++Product commit: 7c672505f20566f5e9ab77c1b0743e6b5d0f9d15.
++Actions: https://github.com/K3lT1K/Vintage/actions/runs/34482103338
++APK: https://github.com/K3lT1K/Vintage/actions/runs/34482103338/artifacts/10154438646
++Source: https://github.com/K3lT1K/Vintage/actions/runs/34482103338/artifacts/10154031346
++
++VintageConsultation is connected to VintageCardRules, AiController's own-trigger
++priority exception and Oracle permanent-spell gate, plus both card-naming
++callbacks in PlayerControllerAi. Consultation remains marked unsupported for
++generic Forge AI; the specialist has a narrow enumeration exception.
++The bot starts with Oracle and Consultation plus a joint UUB budget checked by
++Forge in both spell contexts. Nonempty opposing hands require Force of Will,
++a separate blue pitch card other than Oracle, and life. Empty opposing hands
++allow an unprotected attempt. Public locks/taxes cause a conservative hold.
++Consultation is cast only above our Oracle win trigger, never above the Oracle
++spell or an opposing response. Name Ugin, the Spirit Dragon, with registered
++deck-composition fallback; no hidden library identities/order are inspected.
++Unrelated cantrips are held in the trigger window. Enemy counters during the
++combo receive defensive priority. Normal Forge restrictions, alternate costs
++and actual payment remain in force.
++
++VERIFIED: local 20 assertions, syntax parse of 32 Java files, four 60-card lists;
++full Java/Android build; 14 runtime tests, 0 failures/errors/skips; APK signature,
++native code and bundled offline resources. New regressions cover joint mana,
++nonempty hand/protection, refusal above unresolved Oracle/enemy response,
++defensive counter targeting, actual AI selection above own Oracle trigger,
++actual Consultation naming/exile of 12 cards and Oracle victory.
++Android 16 offline startup/background-resume job 102890719068: PASS.
++No new visual review or completed match is claimed for this update.
++NOT VERIFIED: full games with the new line, matchup win rates, physical phone.
++Conservative policy can miss wins; one Force cannot guarantee a counter war.
++Sequential mana payment may not find every possible source allocation.
++The full-source artifact contains the pre-result handoff; this root file records
++the subsequent CI outcome. Build commands below still apply.
++
++## Previous verified release and broader project context (historical)
 +
 +# HANDOFF — 2026-09-10
 +
@@ -1142,6 +1177,24 @@ index ec6f78e..da10f39 100644
              pageSize = 1024;
          }
  
+diff --git a/forge-gui-mobile/src/forge/card/CardImageRenderer.java b/forge-gui-mobile/src/forge/card/CardImageRenderer.java
+index 6abf9d8..89c6df5 100644
+--- a/forge-gui-mobile/src/forge/card/CardImageRenderer.java
++++ b/forge-gui-mobile/src/forge/card/CardImageRenderer.java
+@@ -652,9 +652,11 @@ public class CardImageRenderer {
+             drawOutlineColor(g, state.getColors(), x, y, w, h);
+         g.drawRect(BORDER_THICKNESS, Color.BLACK, x, y, w, h);
+ 
+-        if (!onTop) {
++        // Battlefield cards must retain their rules even in overlapping groups.
++        // Visibility has already been checked by drawCardImage (no hidden-card leak).
++        if (!onTop && card.getZone() != ZoneType.Battlefield) {
+             return;
+-        } //remaining rendering only needed if card on top
++        }
+ 
+         if (state != null && state.isBasicLand()) {
+             //draw watermark
 diff --git a/forge-gui-mobile/src/forge/menu/FMenuBar.java b/forge-gui-mobile/src/forge/menu/FMenuBar.java
 index dc08d82..11cc384 100644
 --- a/forge-gui-mobile/src/forge/menu/FMenuBar.java
@@ -1684,7 +1737,7 @@ index 6b8e457..a93e0c9 100644
          private final TextRenderer renderer = new TextRenderer();
  
 diff --git a/forge-gui-mobile/src/forge/screens/match/views/VZoneDisplay.java b/forge-gui-mobile/src/forge/screens/match/views/VZoneDisplay.java
-index ada4f98..622a05f 100644
+index ada4f98..5d1e1f4 100644
 --- a/forge-gui-mobile/src/forge/screens/match/views/VZoneDisplay.java
 +++ b/forge-gui-mobile/src/forge/screens/match/views/VZoneDisplay.java
 @@ -117,7 +117,7 @@ public class VZoneDisplay extends VCardDisplayArea {
@@ -1710,7 +1763,7 @@ index ada4f98..622a05f 100644
 +            for (int i = 0; i < count; i++) {
 +                CardAreaPanel panel = cardPanels.get().get(i);
 +                float arc = count <= 1 ? 0 : (2f*i/(count-1)-1);
-+                panel.setFanAngle(arc*7);
++                panel.setFanAngle(-arc*7);
 +                panel.setBounds(start+i*dx, visibleHeight*0.04f + arc*arc*visibleHeight*0.07f, cw, ch);
 +                orderedCards.get().add(panel.getCard());
 +            }
@@ -2261,7 +2314,7 @@ index 722a0e5..a847709 100644
 +mvn -B -pl forge-gui-desktop -am '-Dtest=Vintage*RegressionTest' -DfailIfNoTests=false -Dsurefire.failIfNoSpecifiedTests=false test
  mvn -B -P android-test-build verify -Dandroid.sdk.path="$ANDROID_SDK_ROOT" -Dandroid.buildToolsVersion=35.0.0 -Dmaven.test.skip=true
 diff --git a/tools/vintage-solo/check.py b/tools/vintage-solo/check.py
-index afbe2bf..f1b68f7 100644
+index afbe2bf..e55ddf3 100644
 --- a/tools/vintage-solo/check.py
 +++ b/tools/vintage-solo/check.py
 @@ -8,7 +8,13 @@ javac=['javac'] if shutil.which('javac') else ['java','--module','jdk.compiler/c
@@ -2279,7 +2332,7 @@ index afbe2bf..f1b68f7 100644
  forge-gui-desktop/src/main/java/forge/view/VintageBenchmark.java
  forge-gui-desktop/src/main/java/forge/view/Main.java
  forge-ai/src/main/java/forge/ai/AiController.java
-@@ -21,7 +27,19 @@ forge-gui-mobile/src/forge/Forge.java
+@@ -21,7 +27,20 @@ forge-gui-mobile/src/forge/Forge.java
  forge-gui-mobile/src/forge/assets/AssetsDownloader.java
  forge-gui-mobile/src/forge/screens/home/HomeScreen.java
  forge-gui-mobile/src/forge/screens/match/MatchScreen.java
@@ -2294,13 +2347,14 @@ index afbe2bf..f1b68f7 100644
 +forge-gui-mobile/src/forge/screens/match/views/VZoneDisplay.java
 +forge-gui-mobile/src/forge/screens/match/views/VCardDisplayArea.java
 +forge-gui-mobile/src/forge/toolbox/FCardPanel.java
++forge-gui-mobile/src/forge/card/CardImageRenderer.java
 +forge-gui/src/main/java/forge/player/PlayerControllerHuman.java
 +forge-gui-desktop/src/test/java/forge/game/mana/VintageCardsRegressionTest.java
 +forge-gui-desktop/src/test/java/forge/game/mana/VintageManaRegressionTest.java'''.splitlines()]
  syntax=subprocess.check_output(['java','-cp',str(classes),'ParseJava',*map(str,paths)],text=True)
  index={}
  for p in (ROOT/'forge-gui/res/cardsfolder').rglob('*.txt'):
-@@ -43,6 +61,14 @@ for p in sorted((ROOT/'forge-gui/res/vintage-solo').glob('*.dck')):
+@@ -43,6 +62,14 @@ for p in sorted((ROOT/'forge-gui/res/vintage-solo').glob('*.dck')):
          assert n <= (1 if name in restricted else 99 if name in ['Plains','Island','Swamp','Mountain','Forest'] else 4),(p,name,'count illegal')
          entries.append(dict(name=name,count=n,script=str(script.relative_to(ROOT)),ai_removal_flag='RemAIDeck:True' in data, runtime='NOT TESTED'))
      decks[p.stem]=dict(total=60,unique=len(cards),cards=entries)
