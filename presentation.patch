@@ -1,8 +1,8 @@
 diff --git a/HANDOFF.md b/HANDOFF.md
-index 95768df..2b27108 100644
+index 95768df..05ccfb6 100644
 --- a/HANDOFF.md
 +++ b/HANDOFF.md
-@@ -147,3 +147,60 @@ Actions, но точный URL в контексте/сохранённом пр
+@@ -147,3 +147,76 @@ Actions, но точный URL в контексте/сохранённом пр
  GitHub tools. Попросить владельца создать Private repo с README через
  https://github.com/new?name=vintage-solo, предоставить доступ GitHub app и
  прислать URL. Это технически недоступная операция, не повторное согласование.
@@ -63,6 +63,22 @@ index 95768df..2b27108 100644
 +
 +CI 34467025677 compiled production sources; test compilation caught that
 +getTargetPlayers returns Iterable, not List. Fixed test access via iterator.
++
++## Deck-only image downloads (latest user steering)
++New Картинки колод button gathers exact printings from ALL FOUR deck lists,
++deduplicates, includes back faces and required tokens. Added explicit-list
++constructor to the existing GuiDownloadFilteredCardImages: no all-card scan,
++no set synchronization or bulk metadata download. Existing cached files skipped.
++GuiDownloader has compact progress/cancel mode; downloads remain opt-in, on
++background worker, text cards still work offline. Actual remote image transfer
++not tested here. Added offline plan regression: 84 distinct card names, <=100
++files for its two-token fixture, no bulk/ZIP URL, cached file omitted on retry.
++Production queue also includes the remaining relevant token scripts.
++
++Verified run 34467498530 / commit 4a6acb829742c36fd09335240a7febec8f8c6161:
++10 real Forge tests PASS (0 failures/errors/skips); signed APK and complete
++offline resource integrity PASS. Android startup job pending at this point.
++Deck image download addition is subsequent and awaits its own CI run.
 diff --git a/forge-ai/src/main/java/forge/ai/AiController.java b/forge-ai/src/main/java/forge/ai/AiController.java
 index 1b8e5c4..fba8fc3 100644
 --- a/forge-ai/src/main/java/forge/ai/AiController.java
@@ -627,6 +643,50 @@ index 0000000..9c429ad
 +        activate.setActivatingPlayer(p);
 +        Assert.assertFalse(ComputerUtilMana.canPayManaCost(activate, p, 0, false));
 +        Assert.assertEquals(p.getManaPool().totalMana(), 3);
++    }
++}
+diff --git a/forge-gui-desktop/src/test/java/forge/gui/download/VintageImagesRegressionTest.java b/forge-gui-desktop/src/test/java/forge/gui/download/VintageImagesRegressionTest.java
+new file mode 100644
+index 0000000..8f77887
+--- /dev/null
++++ b/forge-gui-desktop/src/test/java/forge/gui/download/VintageImagesRegressionTest.java
+@@ -0,0 +1,38 @@
++package forge.gui.download;
++
++import forge.ai.AITest;
++import forge.deck.VintageSolo;
++import forge.deck.io.DeckSerializer;
++import forge.item.PaperCard;
++import forge.localinstance.properties.ForgeConstants;
++import org.testng.Assert;
++import org.testng.annotations.Test;
++import java.io.File;
++import java.util.LinkedHashSet;
++import java.util.Set;
++import java.util.Map;
++
++/** Builds the real missing-image plan without any network access. */
++public class VintageImagesRegressionTest extends AITest {
++    private static class DeckImages extends GuiDownloadFilteredCardImages {
++        DeckImages(Set<PaperCard> cards) { super(cards, Set.of("c_1_1_spirit", "undercity")); }
++        Map<String,String> plan() throws Exception { return getNeededFiles(); }
++    }
++    @Test(timeOut = 30000) public void fourDecksProduceSmallExactImagePlanWithoutBulkSync() throws Exception {
++        Set<PaperCard> cards = new LinkedHashSet<>();
++        for (VintageSolo.Archetype a : VintageSolo.Archetype.values())
++            for (var entry : DeckSerializer.fromFile(new File(ForgeConstants.RES_DIR + "vintage-solo/" + a.file + ".dck")).getMain())
++                cards.add(entry.getKey());
++        Assert.assertEquals(cards.stream().map(c -> c.getName()).distinct().count(), 84L);
++        Map<String,String> plan = new DeckImages(cards).plan();
++        Assert.assertFalse(plan.isEmpty());
++        Assert.assertTrue(plan.size() <= 100, "Unexpected collection-wide download: " + plan.size());
++        Assert.assertTrue(plan.values().stream().noneMatch(u -> u.contains("bulk-data") || u.endsWith(".zip")));
++        // A previously downloaded file must not be queued on a second pass.
++        File cached = new File(plan.keySet().iterator().next());
++        Assert.assertTrue(cached.getParentFile().isDirectory() || cached.getParentFile().mkdirs());
++        Assert.assertTrue(cached.createNewFile());
++        try { Assert.assertFalse(new DeckImages(cards).plan().containsKey(cached.getAbsolutePath())); }
++        finally { Assert.assertTrue(cached.delete()); }
 +    }
 +}
 diff --git a/forge-gui-mobile/src/forge/Forge.java b/forge-gui-mobile/src/forge/Forge.java
@@ -1277,11 +1337,60 @@ index ada4f98..622a05f 100644
              cardPanel.setBounds(x, y, cardWidth, cardHeight);
              if (orderedCards.get().size() % 2 == 0) {
                  x = 0;
+diff --git a/forge-gui-mobile/src/forge/screens/settings/GuiDownloader.java b/forge-gui-mobile/src/forge/screens/settings/GuiDownloader.java
+index ea92bd0..45dd3b8 100644
+--- a/forge-gui-mobile/src/forge/screens/settings/GuiDownloader.java
++++ b/forge-gui-mobile/src/forge/screens/settings/GuiDownloader.java
+@@ -52,11 +52,12 @@ public class GuiDownloader extends FDialog {
+             service.setCancel(true);
+             hide();
+             if (callback != null) {
+-                callback.accept(getButton(0).getText() == "OK"); //determine result based on whether download finished
++                callback.accept("OK".equals(getButton(0).getText())); //determine result based on whether download finished
+             }
+         }
+     };
+ 
++    private boolean compact;
+     private final GuiDownloadService service;
+     private final Consumer<Boolean> callback;
+ 
+@@ -91,6 +92,19 @@ public class GuiDownloader extends FDialog {
+         progressBar.setDescription("Scanning for existing items...");
+     }
+ 
++    public GuiDownloader compact() {
++        compact = true;
++        radProxyNone.setVisible(false);
++        radProxyHTTP.setVisible(false);
++        radProxySocks.setVisible(false);
++        txtAddress.setVisible(false);
++        txtPort.setVisible(false);
++        getButton(0).setText("Скачать");
++        getButton(1).setText("Отмена");
++        progressBar.setDescription("Проверка уже скачанных изображений…");
++        return this;
++    }
++
+     @Override
+     public void show() {
+         Forge.startContinuousRendering();
+@@ -127,6 +141,10 @@ public class GuiDownloader extends FDialog {
+         float x = PADDING;
+         float y = PADDING;
+         final float w = width - 2 * PADDING;
++        if (compact) {
++            progressBar.setBounds(x, y, w, Utils.AVG_FINGER_HEIGHT * 1.2f);
++            return y + progressBar.getHeight() + PADDING * 2;
++        }
+         final float radioButtonWidth = w / 3;
+         final float radioButtonHeight = radProxyNone.getAutoSizeBounds().height;
+ 
 diff --git a/forge-gui-mobile/src/forge/screens/vintage/VintageSoloScreen.java b/forge-gui-mobile/src/forge/screens/vintage/VintageSoloScreen.java
-index 5815b06..d04dc08 100644
+index 5815b06..bfa6dcd 100644
 --- a/forge-gui-mobile/src/forge/screens/vintage/VintageSoloScreen.java
 +++ b/forge-gui-mobile/src/forge/screens/vintage/VintageSoloScreen.java
-@@ -37,16 +37,16 @@ public final class VintageSoloScreen extends FScreen {
+@@ -37,17 +37,19 @@ public final class VintageSoloScreen extends FScreen {
      private static VintageSoloScreen instance;
      private final FLabel title = add(new FLabel.Builder().text("VINTAGE • SOLO")
              .font(FSkinFont.get(26)).align(Align.center).build());
@@ -1301,12 +1410,17 @@ index 5815b06..d04dc08 100644
 +    private final FCheckBox textCards = add(new FCheckBox("Текстовые карты", true));
 +    private final FButton start = add(new FButton("Начать партию"));
 +    private final FButton help = add(new FButton("Управление"));
++    private final FButton pictures = add(new FButton("Картинки колод"));
      private boolean starting;
++    private boolean preparingPictures;
  
      private VintageSoloScreen() {
-@@ -57,10 +57,10 @@ public final class VintageSoloScreen extends FScreen {
+         super((Header) null);
+@@ -56,11 +58,12 @@ public final class VintageSoloScreen extends FScreen {
+         humanDeck.setChangedHandler(e -> updatePlans());
          botDeck.setChangedHandler(e -> updatePlans());
          start.setCommand(e -> startMatch());
++        pictures.setCommand(e -> downloadDeckPictures());
          help.setCommand(e -> FOptionPane.showMessageDialog(
 -                "Long-press to zoom a card. Tap a zone to inspect it.\n"
 -                + "Select attackers and blockers on the battlefield. Use the prompt buttons to pass priority.\n"
@@ -1319,7 +1433,52 @@ index 5815b06..d04dc08 100644
          updatePlans();
      }
      public static void show() {
-@@ -96,13 +96,14 @@ public final class VintageSoloScreen extends FScreen {
+@@ -85,6 +88,44 @@ public final class VintageSoloScreen extends FScreen {
+         VintageSolo.configure(deck, type, specialist);
+         return deck;
+     }
++    private void downloadDeckPictures() {
++        if (preparingPictures || starting) return;
++        preparingPictures = true;
++        pictures.setEnabled(false);
++        FThreads.invokeInBackgroundThread(() -> {
++            try {
++                java.util.Set<forge.item.PaperCard> cards = new java.util.LinkedHashSet<>();
++                java.util.Set<String> tokens = new java.util.HashSet<>(List.of("undercity", "c_a_treasure_sac", "b_4_1_skeleton_menace"));
++                for (Archetype type : Archetype.values()) {
++                    for (var entry : loadDeck(type, false).getMain()) {
++                        cards.add(entry.getKey());
++                        tokens.addAll(entry.getKey().getRules().getTokens());
++                    }
++                }
++                FThreads.invokeInEdtLater(() -> {
++                    preparingPictures = false;
++                    pictures.setEnabled(true);
++                    new forge.screens.settings.GuiDownloader(
++                            new forge.gui.download.GuiDownloadFilteredCardImages(cards, tokens), finished -> {
++                                forge.ImageKeys.clearMissingCards();
++                                GuiBase.getInterface().clearImageCache();
++                                if (finished) {
++                                    textCards.setSelected(false);
++                                    FModel.getPreferences().setPref(FPref.UI_DISABLE_CARD_IMAGES, false);
++                                    FModel.getPreferences().save();
++                                }
++                            }).compact().show();
++                });
++            } catch (Exception ex) {
++                FThreads.invokeInEdtLater(() -> {
++                    preparingPictures = false;
++                    pictures.setEnabled(true);
++                    FOptionPane.showErrorDialog(ex.getMessage(), "Не удалось подготовить загрузку");
++                });
++            }
++        });
++    }
++
+     private void startMatch() {
+         if (starting || Forge.isLoadingaMatch()) { return; }
+         starting = true;
+@@ -96,13 +137,14 @@ public final class VintageSoloScreen extends FScreen {
          FModel.getPreferences().setPref(FPref.YIELD_SKIP_PHASE_DELAY, true);
          FModel.getPreferences().setPref(FPref.YIELD_SKIP_RESOLVE_DELAY, true);
          FModel.getPreferences().setPref(FPref.UI_SHOW_AUTOTAP_PREVIEW, true);
@@ -1335,6 +1494,15 @@ index 5815b06..d04dc08 100644
                      try {
                          RegisteredPlayer hp = new RegisteredPlayer(hd).setPlayer(GamePlayerUtil.getGuiPlayer());
                          RegisteredPlayer bp = new RegisteredPlayer(bd).setPlayer(GamePlayerUtil.createAiPlayer("Vintage Bot", "Default"));
+@@ -152,6 +194,7 @@ public final class VintageSoloScreen extends FScreen {
+         autoPass.setBounds(pad, y, col, row);
+         textCards.setBounds(pad + col + gap, y, col, row);
+         start.setBounds(width * .3f, height - pad - row * 1.2f, width * .4f, row * 1.2f);
+-        help.setBounds(pad, height - pad - row, col * .48f, row);
++        help.setBounds(pad, height - pad - row, width * .21f, row);
++        pictures.setBounds(width * .74f, height - pad - row, width * .24f - pad, row);
+     }
+ }
 diff --git a/forge-gui-mobile/src/forge/toolbox/FCardPanel.java b/forge-gui-mobile/src/forge/toolbox/FCardPanel.java
 index 1ded0c1..525ecfe 100644
 --- a/forge-gui-mobile/src/forge/toolbox/FCardPanel.java
@@ -1500,6 +1668,80 @@ index 0000000..b931663
 +1 Time Walk
 +1 Undercity Sewers
 +4 Underground Sea
+diff --git a/forge-gui/src/main/java/forge/gui/download/GuiDownloadFilteredCardImages.java b/forge-gui/src/main/java/forge/gui/download/GuiDownloadFilteredCardImages.java
+index e2b9051..53a16ac 100644
+--- a/forge-gui/src/main/java/forge/gui/download/GuiDownloadFilteredCardImages.java
++++ b/forge-gui/src/main/java/forge/gui/download/GuiDownloadFilteredCardImages.java
+@@ -29,20 +29,42 @@ import java.util.function.Predicate;
+ public class GuiDownloadFilteredCardImages extends GuiDownloadService {
+ 
+     private final Predicate<PaperCard> filter;
++    private final List<PaperCard> deckCards;
++    private final java.util.Set<String> deckTokens;
+ 
+     public GuiDownloadFilteredCardImages(Predicate<PaperCard> filter) {
+         this.filter = filter;
++        deckCards = null;
++        deckTokens = java.util.Set.of();
++    }
++
++    /** Exact printings only: never scans all editions or synchronizes bulk/set metadata. */
++    public GuiDownloadFilteredCardImages(java.util.Collection<PaperCard> cards, java.util.Set<String> tokens) {
++        filter = null;
++        deckCards = List.copyOf(new java.util.LinkedHashSet<>(cards));
++        deckTokens = java.util.Set.copyOf(tokens);
+     }
+ 
+     @Override
+     public String getTitle() {
+-        return "Download Card Images";
++        return deckCards == null ? "Download Card Images" : "Изображения карт четырёх колод";
+     }
+ 
+     @Override
+     protected Map<String, String> getNeededFiles() throws UnsupportedEncodingException {
+         final Map<String, String> downloads = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+ 
++        if (deckCards != null) {
++            for (PaperCard card : deckCards) {
++                if (cancel) break;
++                addIfMissing(card, "", downloads);
++                if (card.hasBackFace()) addIfMissing(card, "back", downloads);
++            }
++            addDeckTokens(downloads);
++            reportStatus("Только выбранные печатные версии: " + deckCards.size() + "; осталось файлов: " + downloads.size());
++            return downloads;
++        }
++
+         final List<PaperCard> matches = new ArrayList<>();
+         final TreeSet<String> scryfallSetCodes = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
+         for (final PaperCard c : Iterables.concat(
+@@ -106,6 +128,25 @@ public class GuiDownloadFilteredCardImages extends GuiDownloadService {
+         return downloads;
+     }
+ 
++    private void addDeckTokens(Map<String, String> downloads) {
++        // Read the bundled manifest; select at most one illustration per required token.
++        List<org.apache.commons.lang3.tuple.Pair<String, String>> manifest =
++                forge.util.FileUtil.readNameUrlFile(ForgeConstants.IMAGE_LIST_TOKENS_FILE);
++        for (String token : deckTokens) {
++            if (cancel) break;
++            if (!token.matches("[a-z0-9_]+")) continue;
++            File destination = new File(ForgeConstants.CACHE_TOKEN_PICS_DIR, token + ".jpg");
++            if (destination.isFile()) continue;
++            String url = null;
++            for (var entry : manifest) {
++                if (entry.getLeft().equals(token + ".jpg")) { url = entry.getRight(); break; }
++                if (url == null && entry.getLeft().startsWith(token + "_")) url = entry.getRight();
++            }
++            if (token.equals("undercity")) url = ForgeConstants.URL_PIC_SCRYFALL_DOWNLOAD + "named?exact=Undercity&format=image";
++            if (url != null) downloads.put(destination.getAbsolutePath(), url);
++        }
++    }
++
+     private void syncSetsOneByOne(List<String> needSync) throws UnsupportedEncodingException {
+         int setIndex = 0;
+         for (String setCode : needSync) {
 diff --git a/forge-gui/src/main/java/forge/player/PlayerControllerHuman.java b/forge-gui/src/main/java/forge/player/PlayerControllerHuman.java
 index 0b45b86..d7493e1 100644
 --- a/forge-gui/src/main/java/forge/player/PlayerControllerHuman.java
@@ -1608,21 +1850,24 @@ index 722a0e5..a847709 100644
 +mvn -B -pl forge-gui-desktop -am '-Dtest=Vintage*RegressionTest' -DfailIfNoTests=false -Dsurefire.failIfNoSpecifiedTests=false test
  mvn -B -P android-test-build verify -Dandroid.sdk.path="$ANDROID_SDK_ROOT" -Dandroid.buildToolsVersion=35.0.0 -Dmaven.test.skip=true
 diff --git a/tools/vintage-solo/check.py b/tools/vintage-solo/check.py
-index afbe2bf..057302f 100644
+index afbe2bf..8247e0b 100644
 --- a/tools/vintage-solo/check.py
 +++ b/tools/vintage-solo/check.py
-@@ -8,7 +8,9 @@ javac=['javac'] if shutil.which('javac') else ['java','--module','jdk.compiler/c
+@@ -8,7 +8,12 @@ javac=['javac'] if shutil.which('javac') else ['java','--module','jdk.compiler/c
  subprocess.run([*javac,'-encoding','UTF-8','-d',str(classes),str(ROOT/'forge-ai/src/main/java/forge/ai/vintage/OpeningHandPlanner.java'),str(ROOT/'forge-core/src/main/java/forge/util/VintageResources.java'),str(ROOT/'tools/vintage-solo/tests/LocalChecks.java'),str(ROOT/'tools/vintage-solo/tests/ParseJava.java')],check=True)
  checks=subprocess.check_output(['java','-cp',str(classes),'LocalChecks'],text=True)
  # Parse actual integration files even when Maven dependencies are unavailable.
 -paths=[ROOT/p for p in '''forge-ai/src/main/java/forge/ai/vintage/VintageRemoval.java
-+paths=[ROOT/p for p in '''forge-ai/src/main/java/forge/ai/vintage/VintageCardRules.java
++paths=[ROOT/p for p in '''forge-gui-desktop/src/test/java/forge/gui/download/VintageImagesRegressionTest.java
++forge-gui/src/main/java/forge/gui/download/GuiDownloadFilteredCardImages.java
++forge-gui-mobile/src/forge/screens/settings/GuiDownloader.java
++forge-ai/src/main/java/forge/ai/vintage/VintageCardRules.java
 +forge-ai/src/main/java/forge/ai/vintage/VintageDoomsday.java
 +forge-ai/src/main/java/forge/ai/vintage/VintageRemoval.java
  forge-gui-desktop/src/main/java/forge/view/VintageBenchmark.java
  forge-gui-desktop/src/main/java/forge/view/Main.java
  forge-ai/src/main/java/forge/ai/AiController.java
-@@ -21,7 +23,19 @@ forge-gui-mobile/src/forge/Forge.java
+@@ -21,7 +26,19 @@ forge-gui-mobile/src/forge/Forge.java
  forge-gui-mobile/src/forge/assets/AssetsDownloader.java
  forge-gui-mobile/src/forge/screens/home/HomeScreen.java
  forge-gui-mobile/src/forge/screens/match/MatchScreen.java
@@ -1643,7 +1888,7 @@ index afbe2bf..057302f 100644
  syntax=subprocess.check_output(['java','-cp',str(classes),'ParseJava',*map(str,paths)],text=True)
  index={}
  for p in (ROOT/'forge-gui/res/cardsfolder').rglob('*.txt'):
-@@ -43,6 +57,14 @@ for p in sorted((ROOT/'forge-gui/res/vintage-solo').glob('*.dck')):
+@@ -43,6 +60,14 @@ for p in sorted((ROOT/'forge-gui/res/vintage-solo').glob('*.dck')):
          assert n <= (1 if name in restricted else 99 if name in ['Plains','Island','Swamp','Mountain','Forest'] else 4),(p,name,'count illegal')
          entries.append(dict(name=name,count=n,script=str(script.relative_to(ROOT)),ai_removal_flag='RemAIDeck:True' in data, runtime='NOT TESTED'))
      decks[p.stem]=dict(total=60,unique=len(cards),cards=entries)
