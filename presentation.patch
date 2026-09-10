@@ -504,10 +504,10 @@ index 0000000..bb066ad
 +}
 diff --git a/forge-ai/src/main/java/forge/ai/vintage/VintageConsultation.java b/forge-ai/src/main/java/forge/ai/vintage/VintageConsultation.java
 new file mode 100644
-index 0000000..c0908c1
+index 0000000..0eec41f
 --- /dev/null
 +++ b/forge-ai/src/main/java/forge/ai/vintage/VintageConsultation.java
-@@ -0,0 +1,106 @@
+@@ -0,0 +1,108 @@
 +package forge.ai.vintage;
 +
 +import forge.ai.ComputerUtilMana;
@@ -592,6 +592,8 @@ index 0000000..c0908c1
 +                    : "hold: need own Oracle win trigger on top, protection and no public lock");
 +            return play;
 +        }
++        if (!p.getGame().getStack().isEmpty() && oracleAbility(p, p.getGame().getStack().peekAbility())
++                && sa.getApi() != ApiType.Counter) return false; // no cantrip between Oracle and Consultation
 +        // Protect either combo spell / its trigger, and our counters during that same fight.
 +        if (sa.getApi() == ApiType.Counter && comboOnStack(p)) {
 +            SpellAbility top = p.getGame().getStack().peekAbility();
@@ -776,10 +778,10 @@ index 1d9c0d6..79eaf8b 100644
          public final String plan;
 diff --git a/forge-gui-desktop/src/test/java/forge/game/mana/VintageCardsRegressionTest.java b/forge-gui-desktop/src/test/java/forge/game/mana/VintageCardsRegressionTest.java
 new file mode 100644
-index 0000000..5047921
+index 0000000..cf84172
 --- /dev/null
 +++ b/forge-gui-desktop/src/test/java/forge/game/mana/VintageCardsRegressionTest.java
-@@ -0,0 +1,150 @@
+@@ -0,0 +1,154 @@
 +package forge.game.mana;
 +
 +import forge.ai.AITest;
@@ -884,6 +886,10 @@ index 0000000..5047921
 +        SpellAbility trigger = oracleTrigger(p);
 +        Assert.assertTrue(forge.ai.vintage.VintageConsultation.respondToOwnTrigger(p, trigger));
 +        Assert.assertTrue(VintageCardRules.choose(p, consult));
++        addCard("Swamp", p);
++        var choices = ((forge.ai.PlayerControllerAi) p.getController()).getAi().chooseSpellAbilityToPlay();
++        Assert.assertNotNull(choices, "real AI must respond above its own Oracle trigger");
++        Assert.assertEquals(choices.get(0).getHostCard().getName(), "Demonic Consultation");
 +        AbilityUtils.resolve(consult);
 +        Assert.assertEquals(consult.getHostCard().getNamedCard(), "Ugin, the Spirit Dragon");
 +        Assert.assertEquals(p.getCardsIn(ZoneType.Library).size(), 0);
