@@ -1,8 +1,8 @@
 diff --git a/HANDOFF.md b/HANDOFF.md
-index 95768df..f219d2a 100644
+index 95768df..6aab51a 100644
 --- a/HANDOFF.md
 +++ b/HANDOFF.md
-@@ -147,3 +147,48 @@ Actions, но точный URL в контексте/сохранённом пр
+@@ -147,3 +147,54 @@ Actions, но точный URL в контексте/сохранённом пр
  GitHub tools. Попросить владельца создать Private repo с README через
  https://github.com/new?name=vintage-solo, предоставить доступ GitHub app и
  прислать URL. Это технически недоступная операция, не повторное согласование.
@@ -51,6 +51,12 @@ index 95768df..f219d2a 100644
 +added; pending CI. Local 18 assertions / 28 syntax parses / four 60-card decks
 +pass. Full compilation and new UI rendering still pending at upload time.
 +Do not remove AI warning flags merely to conceal unsupported generic behavior.
++
++CI 34466155391 caught Java overload ambiguity in Card::getName comparator.
++Fixed with explicit Card lambda. Follow-up batch also fixes double-localized
++phase captions, prevents post-pile cycling/fetching, includes all 84 Russian
++card translations and extends opening-hand checks to black/blue Doomsday mana.
++Local 20 assertions and 28 syntax parses pass. Runtime tests pending rerun.
 diff --git a/forge-ai/src/main/java/forge/ai/AiController.java b/forge-ai/src/main/java/forge/ai/AiController.java
 index 1b8e5c4..fba8fc3 100644
 --- a/forge-ai/src/main/java/forge/ai/AiController.java
@@ -81,15 +87,51 @@ index 00e6b9f..1f79d55 100644
  
          if (cards.isEmpty()) {
 diff --git a/forge-ai/src/main/java/forge/ai/vintage/OpeningHandPlanner.java b/forge-ai/src/main/java/forge/ai/vintage/OpeningHandPlanner.java
-index c5437f3..fcd70fe 100644
+index c5437f3..c7a5c27 100644
 --- a/forge-ai/src/main/java/forge/ai/vintage/OpeningHandPlanner.java
 +++ b/forge-ai/src/main/java/forge/ai/vintage/OpeningHandPlanner.java
-@@ -103,6 +103,15 @@ public final class OpeningHandPlanner {
+@@ -42,7 +42,7 @@ public final class OpeningHandPlanner {
+     }
+ 
+     public static int score(String profile, List<OpeningCard> hand) {
+-        int lands = 0, white = 0, blue = 0, green = 0, rocks = 0, mana = 0;
++        int lands = 0, white = 0, blue = 0, black = 0, green = 0, rocks = 0, mana = 0;
+         int threats = 0, bluePitch = 0, imprint = 0, expensive = 0;
+         List<Integer> landMana = new ArrayList<>();
+         for (OpeningCard c : hand) {
+@@ -58,9 +58,11 @@ public final class OpeningHandPlanner {
+                     default -> 1;
+                 };
+                 landMana.add(amount);
++                if (List.of("Underground Sea", "Undercity Sewers", "Flooded Strand", "Misty Rainforest", "Scalding Tarn", "Polluted Delta").contains(n)) black++;
+                 if (n.equals("Plains") || n.equals("Karakas") || n.equals("Cavern of Souls")
+                         || n.equals("Witch Enchanter") || n.equals("Forbidden Orchard")) { white++; }
+                 if (n.equals("Tropical Island") || n.equals("Volcanic Island") || n.equals("Hedge Maze")
++                        || n.equals("Underground Sea") || n.equals("Undercity Sewers") || n.equals("Snow-Covered Island") || n.equals("Flooded Strand")
+                         || n.equals("Thundering Falls") || n.equals("Forbidden Orchard") || n.equals("Island")
+                         || n.equals("Misty Rainforest") || n.equals("Scalding Tarn") || n.equals("Polluted Delta")) { blue++; }
+                 if (n.equals("Tropical Island") || n.equals("Hedge Maze") || n.equals("Forbidden Orchard")
+@@ -73,12 +75,13 @@ public final class OpeningHandPlanner {
+                 if (c.cmc() >= 6 && !n.equals("Dig Through Time") && !n.equals("Treasure Cruise")) { expensive++; }
+                 if (n.startsWith("Mox ")) {
+                     rocks++; mana++;
++                    if (n.equals("Mox Jet")) { black++; }
+                     if (n.equals("Mox Pearl")) { white++; }
+                     if (n.equals("Mox Sapphire")) { blue++; }
+                     if (n.equals("Mox Emerald")) { green++; }
+                 }
+                 if (n.equals("Mana Crypt")) { rocks++; mana += 2; }
+-                if (n.equals("Black Lotus")) { rocks++; mana += 3; white++; blue++; green++; }
++                if (n.equals("Black Lotus")) { rocks++; mana += 3; white++; blue++; black++; green++; }
+             }
+         }
+         landMana.sort(java.util.Comparator.reverseOrder());
+@@ -103,6 +106,15 @@ public final class OpeningHandPlanner {
                  if (count(hand, "Mishra's Workshop") > 0) { score += 8; }
                  if (count(hand, "Sphere of Resistance") > 0 && threats > 0) { score += 6; }
                  break;
 +            case "DOOMSDAY":
-+                if (blue == 0 || lands == 0) score -= 35;
++                if (blue == 0 || black == 0 || lands == 0) score -= 35;
 +                if (count(hand, "Doomsday") > 0) score += 15;
 +                if (count(hand, "Dark Ritual") > 0 && count(hand, "Doomsday") > 0) score += 8;
 +                if (count(hand, "Ponder") + count(hand, "Preordain") + count(hand, "Ancestral Recall") > 0) score += 12;
@@ -102,10 +144,10 @@ index c5437f3..fcd70fe 100644
                  if (oath > 0 && green > 0 && mana >= 2) { score += 18; }
 diff --git a/forge-ai/src/main/java/forge/ai/vintage/VintageCardRules.java b/forge-ai/src/main/java/forge/ai/vintage/VintageCardRules.java
 new file mode 100644
-index 0000000..4768e1f
+index 0000000..b4f7214
 --- /dev/null
 +++ b/forge-ai/src/main/java/forge/ai/vintage/VintageCardRules.java
-@@ -0,0 +1,108 @@
+@@ -0,0 +1,114 @@
 +package forge.ai.vintage;
 +
 +import forge.game.card.Card;
@@ -121,7 +163,13 @@ index 0000000..4768e1f
 +public final class VintageCardRules {
 +    private VintageCardRules() { }
 +    public static Boolean choose(Player p, SpellAbility sa) {
-+        if (!VintageStrategy.enabled(p) || !sa.isSpell()) return null;
++        if (!VintageStrategy.enabled(p)) return null;
++        if (!sa.isSpell()) {
++            if (VintageDoomsday.inPile(p) && (sa.isCycling() || (!sa.isManaAbility()
++                    && List.of("Flooded Strand", "Misty Rainforest", "Scalding Tarn").contains(sa.getHostCard().getName()))))
++                return result(p, "preserve-pile", false, "do not cycle or fetch-shuffle the established pile");
++            return null;
++        }
 +        return switch (sa.getHostCard().getName()) {
 +            case "Gaea's Blessing" -> blessing(p, sa);
 +            case "Gitaxian Probe" -> probe(p, sa);
@@ -138,8 +186,7 @@ index 0000000..4768e1f
 +            if (!c.isFaceDown() && c.getName().equals(name)) return true;
 +        return false;
 +    }
-+    private static boolean drawSafe(Player p) {
-+        if (p.getCardsIn(ZoneType.Library).isEmpty()) return false;
++    private static boolean drawAllowed(Player p) {
 +        // Conservative around draw replacement/punishment; no concealed cards inspected.
 +        for (Card c : p.getOpponents().getCardsIn(ZoneType.Battlefield)) {
 +            if (c.isFaceDown()) continue;
@@ -150,7 +197,7 @@ index 0000000..4768e1f
 +    }
 +    public static boolean probe(Player p, SpellAbility sa) {
 +        sa.resetTargets();
-+        if (!drawSafe(p)) return result(p, "probe-safety", false, "empty library or public draw lock/danger");
++        if (p.getCardsIn(ZoneType.Library).isEmpty() || !drawAllowed(p)) return result(p, "probe-safety", false, "empty library or public draw lock/danger");
 +        if (VintageDoomsday.inPile(p)) return result(p, "probe-pile", false, "preserve the planned Recall draw sequence");
 +        Player target = p.getOpponents().stream().filter(sa::canTarget).findFirst().orElse(null);
 +        // Empty opposing hand is still a useful cantrip. Hexproof can be bypassed by targeting self.
@@ -169,13 +216,13 @@ index 0000000..4768e1f
 +        sa.getTargets().add(p); // never replenish the opponent's resources accidentally
 +        List<Card> candidates = new ArrayList<>();
 +        for (Card c : p.getCardsIn(ZoneType.Graveyard)) if (move.canTarget(c)) candidates.add(c);
-+        candidates.sort(Comparator.comparingInt(VintageCardRules::recycleValue).reversed().thenComparing(Card::getName));
++        candidates.sort(Comparator.comparingInt(VintageCardRules::recycleValue).reversed().thenComparing((Card c) -> c.getName()));
 +        for (Card c : candidates) {
 +            if (move.getTargets().size() >= 3 || recycleValue(c) <= 0) break;
 +            move.getTargets().add(c);
 +        }
 +        boolean refillsEmpty = move.getTargets().size() > 0;
-+        if (!drawSafe(p) && !(p.getCardsIn(ZoneType.Library).isEmpty() && refillsEmpty))
++        if (!drawAllowed(p) || (p.getCardsIn(ZoneType.Library).isEmpty() && !refillsEmpty))
 +            return result(p, "blessing-draw", false, "cannot safely draw after resolution");
 +        if (!refillsEmpty && p.getCardsIn(ZoneType.Library).size() > 8
 +                && p.getCardsIn(ZoneType.Hand).size() > 3)
@@ -207,6 +254,7 @@ index 0000000..4768e1f
 +        return result(p, "trap-exile", sa.isTargetNumberValid(), "exile all legal enemy spells including copies; never own spells or abilities");
 +    }
 +    private static int threat(SpellAbility sa) {
++        if (sa.getHostCard().isFaceDown()) return 10;
 +        String n = sa.getHostCard().getName();
 +        if (List.of("Doomsday", "Thassa's Oracle", "Ancestral Recall", "Time Walk", "Oath of Druids",
 +                "Null Rod", "Archon of Emeria", "Clarion Conqueror", "Sphere of Resistance", "Trinisphere").contains(n)) return 100;
@@ -216,7 +264,7 @@ index 0000000..4768e1f
 +}
 diff --git a/forge-ai/src/main/java/forge/ai/vintage/VintageDoomsday.java b/forge-ai/src/main/java/forge/ai/vintage/VintageDoomsday.java
 new file mode 100644
-index 0000000..5beeb84
+index 0000000..3eb0553
 --- /dev/null
 +++ b/forge-ai/src/main/java/forge/ai/vintage/VintageDoomsday.java
 @@ -0,0 +1,95 @@
@@ -284,9 +332,9 @@ index 0000000..5beeb84
 +            if (VintageCardRules.publicCard(p, name)) return true;
 +        return false;
 +    }
-+    private static final java.util.Map<SpellAbility, java.util.Set<String>> selections = new java.util.WeakHashMap<>();
++    private static final java.util.Map<SpellAbility, java.util.List<String>> selections = new java.util.WeakHashMap<>();
 +    public static synchronized Card search(CardCollection options, SpellAbility source) {
-+        java.util.Set<String> chosen = selections.computeIfAbsent(source, key -> new java.util.HashSet<>());
++        java.util.List<String> chosen = selections.computeIfAbsent(source, key -> new java.util.ArrayList<>());
 +        Card result = null;
 +        for (String name : PILE) {
 +            if (chosen.contains(name)) continue;
@@ -316,7 +364,7 @@ index 0000000..5beeb84
 +    }
 +}
 diff --git a/forge-ai/src/main/java/forge/ai/vintage/VintageStrategy.java b/forge-ai/src/main/java/forge/ai/vintage/VintageStrategy.java
-index 91f1a77..9b7ac6a 100644
+index 91f1a77..5289f75 100644
 --- a/forge-ai/src/main/java/forge/ai/vintage/VintageStrategy.java
 +++ b/forge-ai/src/main/java/forge/ai/vintage/VintageStrategy.java
 @@ -98,6 +98,7 @@ public final class VintageStrategy {
@@ -327,7 +375,19 @@ index 91f1a77..9b7ac6a 100644
          };
      }
      private static Priority initiative(Player p, SpellAbility sa, String n, CardCollectionView board) {
-@@ -201,6 +202,9 @@ public final class VintageStrategy {
+@@ -184,6 +185,11 @@ public final class VintageStrategy {
+         CardCollectionView board = p.getCardsIn(ZoneType.Battlefield);
+         if (profile(p) == Archetype.WORKSHOP && n.equals("Mishra's Workshop")
+                 && hand.stream().anyMatch(x -> x.isArtifact() && !x.isLand())) { return 100; }
++        if (profile(p) == Archetype.DOOMSDAY) {
++            if (n.equals("Underground Sea")) return 95;
++            if (n.equals("Snow-Covered Island") && has(board, "Underground Sea")) return 90;
++            if (n.equals("Undercity Sewers")) return 45;
++        }
+         if (profile(p) == Archetype.OATH) {
+             if (n.equals("Forbidden Orchard") && (has(hand, "Oath of Druids") || has(board, "Oath of Druids"))
+                     && p.getOpponents().getCreaturesInPlay().size() <= p.getCreaturesInPlay().size()
+@@ -201,8 +207,15 @@ public final class VintageStrategy {
      /** Legal, unordered tutor options. This callback is reached only when an actual search permits it. */
      public static Card search(Player p, CardCollection options, SpellAbility sa, Player owner, Player decider) {
          if (!enabled(p) || !p.equals(owner) || !p.equals(decider) || options.isEmpty()) { return null; }
@@ -335,8 +395,15 @@ index 91f1a77..9b7ac6a 100644
 +            return VintageDoomsday.search(options, sa);
 +        }
          String source = sa.getHostCard().getName();
-         if (!List.of("Misty Rainforest", "Scalding Tarn", "Polluted Delta", "Lórien Revealed", "Urza's Saga").contains(source)) {
+-        if (!List.of("Misty Rainforest", "Scalding Tarn", "Polluted Delta", "Lórien Revealed", "Urza's Saga").contains(source)) {
++        if (profile(p) == Archetype.DOOMSDAY && source.equals("Demonic Tutor")) {
++            String desired = has(p.getCardsIn(ZoneType.Hand), "Doomsday") ? "Force of Will" : "Doomsday";
++            for (Card c : options) if (c.getName().equals(desired)) return c;
++        }
++        if (!List.of("Flooded Strand", "Misty Rainforest", "Scalding Tarn", "Polluted Delta", "Lórien Revealed", "Urza's Saga").contains(source)) {
              return null;
+         }
+         Card best = null;
 diff --git a/forge-core/src/main/java/forge/deck/VintageSolo.java b/forge-core/src/main/java/forge/deck/VintageSolo.java
 index 1d9c0d6..79eaf8b 100644
 --- a/forge-core/src/main/java/forge/deck/VintageSolo.java
@@ -610,7 +677,7 @@ index ec6f78e..da10f39 100644
          }
  
 diff --git a/forge-gui-mobile/src/forge/menu/FMenuBar.java b/forge-gui-mobile/src/forge/menu/FMenuBar.java
-index dc08d82..cb58a1d 100644
+index dc08d82..11cc384 100644
 --- a/forge-gui-mobile/src/forge/menu/FMenuBar.java
 +++ b/forge-gui-mobile/src/forge/menu/FMenuBar.java
 @@ -12,6 +12,8 @@ import forge.screens.match.MatchController;
@@ -675,7 +742,7 @@ index dc08d82..cb58a1d 100644
 +            forge.game.GameView game = MatchController.instance.getGameView();
 +            if (game != null && game.getPhase() != null) {
 +                String who = player.equals(game.getPlayerTurn()) ? "Ваш ход" : "Ход соперника";
-+                String phase = Forge.getLocalizer().getMessage(game.getPhase().nameForUi);
++                String phase = game.getPhase().nameForUi;
 +                float start = Math.max(x + 8, w*0.36f);
 +                g.drawText(who + " · " + phase, FMenuTab.FONT,
 +                        forge.assets.FSkinColor.get(forge.assets.FSkinColor.Colors.CLR_TEXT),
@@ -1288,10 +1355,10 @@ index 1ded0c1..525ecfe 100644
          }
 diff --git a/forge-gui/res/languages/cardnames-ru-RU.txt b/forge-gui/res/languages/cardnames-ru-RU.txt
 new file mode 100644
-index 0000000..5c37aa6
+index 0000000..eaee9f1
 --- /dev/null
 +++ b/forge-gui/res/languages/cardnames-ru-RU.txt
-@@ -0,0 +1,77 @@
+@@ -0,0 +1,94 @@
 +Ancestral Recall|Воспоминание предков (Ancestral Recall)|Мгновенное заклинание|Целевой игрок берёт три карты.
 +Ancient Tomb|Древняя гробница (Ancient Tomb)|Земля|{T}: добавьте {C}{C}. Древняя гробница наносит вам 2 повреждения.
 +Anointed Peacekeeper|Помазанный миротворец (Anointed Peacekeeper)|Существо — Человек Священник|Бдительность\nПри выходе Помазанного миротворца на поле битвы посмотрите руку оппонента, затем выберите любое название карты.\nЗаклинания с выбранным названием, которые разыгрывают ваши оппоненты, стоят на {2} больше.\nАктивация способностей источников с выбранным названием стоит на {2} больше, если это не мана-способности.
@@ -1369,6 +1436,23 @@ index 0000000..5c37aa6
 +Skeleton Token|Фишка Скелета|Фишка существа — Скелет|Угроза
 +The Initiative|Инициатива|Эффект|Когда вы получаете инициативу и в начале вашего шага поддержки, отправьтесь в Подземный город. Когда одно или несколько существ игрока наносят вам боевые повреждения, тот игрок получает инициативу. Только один игрок может обладать инициативой одновременно.
 +Wrenn and Six Emblem|Эмблема Ренн и Шестого|Эмблема — Ренн|Карты мгновенных заклинаний и волшебства в вашем кладбище имеют Retrace: вы можете разыгрывать их из кладбища, сбрасывая карту земли в дополнение к оплате других стоимостей.
++Doomsday|Судный день (Doomsday)|Волшебство|Найдите в вашей библиотеке и на кладбище пять карт и изгоните остальные. Положите выбранные карты на верх вашей библиотеки в любом порядке. Вы теряете половину ваших жизней с округлением вверх.
++Thassa's Oracle|Оракул Тассы (Thassa's Oracle)|Существо — Мерфолк Чародей|Когда Оракул Тассы выходит на поле битвы, посмотрите X верхних карт вашей библиотеки, где X — ваша преданность синему. Положите не более одной из них на верх вашей библиотеки, а остальные — под низ вашей библиотеки в случайном порядке. Если X больше или равно количеству карт в вашей библиотеке, вы выигрываете партию. (Каждый символ {U} в мана-стоимостях перманентов под вашим контролем увеличивает вашу преданность синему на один.)
++Dark Ritual|Тёмный ритуал (Dark Ritual)|Мгновенное заклинание|Добавьте {B}{B}{B}.
++Demonic Tutor|Демонический наставник (Demonic Tutor)|Волшебство|Найдите карту в вашей библиотеке, положите её в вашу руку, затем перетасуйте библиотеку.
++Demonic Consultation|Демоническая консультация (Demonic Consultation)|Мгновенное заклинание|Выберите название карты. Изгоните шесть верхних карт вашей библиотеки, затем показывайте карты с верха вашей библиотеки, пока не покажете карту с выбранным названием. Положите эту карту в вашу руку и изгоните все остальные карты, показанные таким образом.
++Duress|Принуждение (Duress)|Волшебство|Целевой оппонент показывает свою руку. Выберите в ней карту, не являющуюся существом или землёй. Тот игрок сбрасывает ту карту.
++Ponder|Раздумье (Ponder)|Волшебство|Посмотрите три верхние карты вашей библиотеки, затем положите их обратно в любом порядке. Вы можете перетасовать библиотеку.\nВозьмите карту.
++Preordain|Предопределение (Preordain)|Волшебство|Предскажите 2, затем возьмите карту. (Посмотрите две верхние карты вашей библиотеки, затем положите любое количество из них под низ библиотеки, а остальные — на верх в любом порядке.)
++Flow State|Состояние потока (Flow State)|Волшебство|Посмотрите три верхние карты вашей библиотеки. Положите одну из них в вашу руку, а остальные — под низ вашей библиотеки в любом порядке. Если на вашем кладбище есть карта мгновенного заклинания и карта волшебства, вместо этого положите две из них в вашу руку, а остальные — под низ вашей библиотеки в любом порядке.
++Gush|Поток (Gush)|Мгновенное заклинание|Вместо оплаты мана-стоимости этого заклинания вы можете вернуть два Острова под вашим контролем в руку их владельца.\nВозьмите две карты.
++Flusterstorm|Шквал (Flusterstorm)|Мгновенное заклинание|Отмените целевое мгновенное заклинание или волшебство, если его контролирующий не заплатит {1}.\nШторм (Когда вы разыгрываете это заклинание, скопируйте его за каждое заклинание, разыгранное до него в этом ходу. Вы можете выбрать новые цели для копий.)
++Spell Pierce|Пробивание заклинания (Spell Pierce)|Мгновенное заклинание|Отмените целевое заклинание, не являющееся существом, если его контролирующий не заплатит {2}.
++Street Wraith|Уличный призрак (Street Wraith)|Существо — Призрак|Знание Болот (Это существо не может быть заблокировано, пока защищающийся игрок контролирует Болото.)\nЦикл — заплатите 2 жизни. (Заплатите 2 жизни, сбросьте эту карту: возьмите карту.)
++Flooded Strand|Затопленное взморье (Flooded Strand)|Земля|{T}, заплатите 1 жизнь, пожертвуйте Затопленное взморье: найдите в вашей библиотеке карту Равнины или Острова, положите её на поле битвы, затем перетасуйте библиотеку.
++Undercity Sewers|Канализация подземного города (Undercity Sewers)|Земля — Остров Болото|({T}: добавьте {U} или {B}.)\nКанализация подземного города выходит на поле битвы повёрнутой.\nКогда Канализация подземного города выходит на поле битвы, выследите 1. (Посмотрите верхнюю карту вашей библиотеки. Вы можете положить её на ваше кладбище.)
++Underground Sea|Подземное море (Underground Sea)|Земля — Остров Болото|({T}: добавьте {U} или {B}.)
++Snow-Covered Island|Заснеженный остров (Snow-Covered Island)|Базовая Снежная Земля — Остров|({T}: добавьте {U}.)
 diff --git a/forge-gui/res/vintage-solo/doomsday.dck b/forge-gui/res/vintage-solo/doomsday.dck
 new file mode 100644
 index 0000000..b931663
@@ -1440,7 +1524,7 @@ index 0b45b86..d7493e1 100644
      public void autoPassUntilEndOfTurn() {
 diff --git a/tools/vintage-solo/DOOMSDAY.md b/tools/vintage-solo/DOOMSDAY.md
 new file mode 100644
-index 0000000..dce2ea5
+index 0000000..6d329e9
 --- /dev/null
 +++ b/tools/vintage-solo/DOOMSDAY.md
 @@ -0,0 +1,33 @@
@@ -1460,8 +1544,8 @@ index 0000000..dce2ea5
 +It cannot predict concealed answers. Other Doomsday piles are not implemented.
 +Demonic Consultation is held rather than guessing a dangerous name. This limits
 +bot strength. Do not claim a win rate or full support until matches are measured.
-+Existing three-deck Russian translations remain; new Doomsday-only cards may
-+still show English text. No card scripts or rules modified for AI convenience.
++All 84 distinct main-deck cards have Russian text with original English names;
++new translations are custom, not claimed as official printed text. No card scripts or rules modified for AI convenience.
 +
 +Card policies live in VintageCardRules and are called by AiController.canPlaySa.
 +Forge still checks timing, restrictions, legal targets and actual costs/payment.
@@ -1479,10 +1563,10 @@ index 0000000..dce2ea5
 +mvn -B -pl forge-gui-desktop -am '-Dtest=Vintage*RegressionTest' -DfailIfNoTests=false -Dsurefire.failIfNoSpecifiedTests=false test
 diff --git a/tools/vintage-solo/TRANSLATION.md b/tools/vintage-solo/TRANSLATION.md
 new file mode 100644
-index 0000000..db75eef
+index 0000000..9f52030
 --- /dev/null
 +++ b/tools/vintage-solo/TRANSLATION.md
-@@ -0,0 +1,19 @@
+@@ -0,0 +1,22 @@
 +# Russian card text
 +
 +This distribution translates the 67 distinct cards in the three bundled decks,
@@ -1502,6 +1586,9 @@ index 0000000..db75eef
 +
 +Coverage was checked locally. Rendering and dynamic stack text need Android
 +verification; dynamic choice strings can still fall back to English.
++
++2026-09-10: extended to all 84 distinct cards across four decks, including
++17 Doomsday-only cards; complete Oracle mana-symbol counts checked locally.
 diff --git a/tools/vintage-solo/build.sh b/tools/vintage-solo/build.sh
 index 722a0e5..a847709 100644
 --- a/tools/vintage-solo/build.sh
@@ -1514,7 +1601,7 @@ index 722a0e5..a847709 100644
 +mvn -B -pl forge-gui-desktop -am '-Dtest=Vintage*RegressionTest' -DfailIfNoTests=false -Dsurefire.failIfNoSpecifiedTests=false test
  mvn -B -P android-test-build verify -Dandroid.sdk.path="$ANDROID_SDK_ROOT" -Dandroid.buildToolsVersion=35.0.0 -Dmaven.test.skip=true
 diff --git a/tools/vintage-solo/check.py b/tools/vintage-solo/check.py
-index afbe2bf..3960824 100644
+index afbe2bf..057302f 100644
 --- a/tools/vintage-solo/check.py
 +++ b/tools/vintage-solo/check.py
 @@ -8,7 +8,9 @@ javac=['javac'] if shutil.which('javac') else ['java','--module','jdk.compiler/c
@@ -1549,9 +1636,34 @@ index afbe2bf..3960824 100644
  syntax=subprocess.check_output(['java','-cp',str(classes),'ParseJava',*map(str,paths)],text=True)
  index={}
  for p in (ROOT/'forge-gui/res/cardsfolder').rglob('*.txt'):
-@@ -45,4 +59,4 @@ for p in sorted((ROOT/'forge-gui/res/vintage-solo').glob('*.dck')):
+@@ -43,6 +57,14 @@ for p in sorted((ROOT/'forge-gui/res/vintage-solo').glob('*.dck')):
+         assert n <= (1 if name in restricted else 99 if name in ['Plains','Island','Swamp','Mountain','Forest'] else 4),(p,name,'count illegal')
+         entries.append(dict(name=name,count=n,script=str(script.relative_to(ROOT)),ai_removal_flag='RemAIDeck:True' in data, runtime='NOT TESTED'))
      decks[p.stem]=dict(total=60,unique=len(cards),cards=entries)
++translations = {line.split('|')[0]: line.split('|') for line in (ROOT/'forge-gui/res/languages/cardnames-ru-RU.txt').read_text().splitlines()}
++for deck in decks.values():
++    for card in deck['cards']:
++        name = card['name']
++        assert name in translations and len(translations[name]) == 4, (name, 'missing Russian text')
++        oracle = re.search(r'^Oracle:(.+)$', index[name][1], re.M)
++        if oracle:
++            assert collections.Counter(re.findall(r'\{[^}]+\}', oracle[1])) == collections.Counter(re.findall(r'\{[^}]+\}', translations[name][3])), (name, 'translation mana symbols')
  report=dict(review_date='2026-09-08',runtime_date=str(datetime.date.today()),upstream=(ROOT/'UPSTREAM_COMMIT.txt').read_text().strip(),local_assertions=checks.strip(),syntax=syntax.strip(),decks=decks,legality='Counts and B/R against pinned Forge data only; runtime format check also wired before match',full_games=0,apk_built=False,android_launch='NOT TESTED',bot_comparison='NOT RUN',matchups='All 9 ordered pairs, both first-player assignments: NOT RUN')
  (OUT/'local-checks.json').write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n')
 -print(checks+syntax+'PASS three 60-card decks: scripts present and pinned Vintage B/R counts valid')
 +print(checks+syntax+f'PASS {len(decks)} 60-card decks: scripts present and pinned Vintage B/R counts valid')
+diff --git a/tools/vintage-solo/tests/LocalChecks.java b/tools/vintage-solo/tests/LocalChecks.java
+index a494e84..95ae4ec 100644
+--- a/tools/vintage-solo/tests/LocalChecks.java
++++ b/tools/vintage-solo/tests/LocalChecks.java
+@@ -51,6 +51,10 @@ public class LocalChecks {
+             check(choice.bottom().size()==n && new HashSet<>(choice.bottom()).size()==n,"London exact unique bottom count "+n);
+         }
+         check(OpeningHandPlanner.choose("OATH",control,3).keep(),"Stop at four cards");
++        OpeningCard doom=spell("Doomsday",3,false,false,false,false,false);
++        OpeningCard ponder=spell("Ponder",1,false,false,false,true,false);
++        check(OpeningHandPlanner.choose("DOOMSDAY",List.of(land("Underground Sea"),land("Snow-Covered Island"),doom,ponder,force,ponder,doom),0).keep(),"Doomsday: UB development, cantrip and protection");
++        check(!OpeningHandPlanner.choose("DOOMSDAY",List.of(land("Snow-Covered Island"),land("Snow-Covered Island"),doom,doom,force,ponder,doom),0).keep(),"Doomsday: no black source is not combo-ready");
+         Path temp=Files.createTempDirectory("vintage-resource-test");
+         try {
+             VintageResources.install(new ByteArrayInputStream(zip("res/vintage-solo/oath.dck","deck")),temp.toFile(),"v1");
