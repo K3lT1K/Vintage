@@ -1,3 +1,23 @@
+# Verified build for unified Russian cards — 2026-09-10
+
+Product commit: 8f7af95040531f17661a6dac8bcecc0f15038f7f.
+Run: https://github.com/K3lT1K/Vintage/actions/runs/34512122198
+APK: https://github.com/K3lT1K/Vintage/actions/runs/34512122198/artifacts/10166584681
+Source: https://github.com/K3lT1K/Vintage/actions/runs/34512122198/artifacts/10166211261
+
+Full Java/Android build passed. 15 runtime tests, zero failures/errors/skips.
+Image regressions verify recovery after a missing edition was cached, and
+requeue of zero-length, HTML and truncated PNG files; valid PNG is skipped.
+The file validator checks headers/end markers, not full decoding/CRC.
+Signature/native/offline-resource integrity gate PASS.
+Local: 20 assertions, 36 syntax parses; Russian coverage 85 faces + 6 token
+scripts + 3 related entries = 94 records. Main-deck mana symbols match scripts.
+Android 16 offline startup/background resume: PASS, job 102992028453. Real image download on phone and full games NOT
+verified. Translations are custom; no independent linguistic review claimed.
+This root handoff records CI results after the source artifact was assembled.
+
+## Historical development notes
+
 # Unified Russian cards + image recovery (2026-09-10)
 Removed text-only checkbox. Vintage screen/start forces UI_DISABLE_CARD_IMAGES
 false and border mode Art: downloaded scans contribute illustrations while
