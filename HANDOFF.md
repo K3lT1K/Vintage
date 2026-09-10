@@ -1,57 +1,68 @@
-# Изменение темпа — 2026-09-09
+# HANDOFF — 2026-09-10
 
-По запросу пользователя добавлен VintageGamePacing через startGameHook реального VintageSoloScreen: события земли и заклинания бота задерживают поток игры на 1000 мс; события фазы хода бота — на 500 мс. UI-поток не спит. Приоритет/мановые активации отдельно не замедляются. Задержки автопередачи остаются отключены, чтобы не суммировать одинаковые паузы. AI-симуляции не подписаны. Расчёт самого ИИ может добавлять время; точный темп на телефоне пока не измерен. Новая сборка и startup CI должны быть проверены; ниже предыдущий проверенный APK.
+## Current verified build
 
-# HANDOFF — Vintage Solo
+- Repository: https://github.com/K3lT1K/Vintage
+- Build commit: `bf59a65e167e4a04fc496a59f34c0431e04c79c0`.
+- Successful build AND Android startup: https://github.com/K3lT1K/Vintage/actions/runs/34469122372
+- Signed APK: https://github.com/K3lT1K/Vintage/actions/runs/34469122372/artifacts/10149070267
+- Complete restored Forge sources: https://github.com/K3lT1K/Vintage/actions/runs/34469122372/artifacts/10148783056
+- Android screenshots/logcat: https://github.com/K3lT1K/Vintage/actions/runs/34469122372/artifacts/10149302081
+- Pinned upstream Forge: `ce5b0dbf17733847929e990c77274893223e1fa6`.
+- APK package `forge.vintage.solo`, launcher `forge.app.Launcher`, main activity `forge.app.Main`.
+- Debug signed using upstream uber-apk-signer key; signature, launcher, DEX, native libraries, ZIP CRC and complete offline resource hash/file inventory passed.
 
-Обновлено 2026-09-09. Приоритет пользователя: работающий APK, без новых игровых функций; исправлять найденные ошибки. GitHub запись и запуск CI в K3lT1K/Vintage уже разрешены. Не начинать заново и не спрашивать эти разрешения снова.
+## Implemented
 
-## Текущий результат
+Four selectable 60-card decks for either player, including mirrors: Initiative, Workshop, Oath, Doomsday. Doomsday is SingPanMan's 2026-08-23 Vintage Challenge list, main deck only:
+https://www.mtggoldfish.com/deck/download/7923523
 
-- Forge base: ce5b0dbf17733847929e990c77274893223e1fa6.
-- Исходники проверенной сборки: 0780417264de17dfffb5926f236f6672db57a3d8.
-- Run: https://github.com/K3lT1K/Vintage/actions/runs/34304628301
-- Build job 102318638796: success. Два Maven BUILD SUCCESS; подпись и офлайн-ресурсы PASS.
-- Startup job 102320030283: success; 2026-09-09 03:00:54 UTC — offline startup/resume PASS.
-- [APK](https://github.com/K3lT1K/Vintage/actions/runs/34304628301/artifacts/10086347649); [полные исходники](https://github.com/K3lT1K/Vintage/actions/runs/34304628301/artifacts/10086194975); [логи/скриншоты запуска](https://github.com/K3lT1K/Vintage/actions/runs/34304628301/artifacts/10086472801).
-- APK подписан тестовым ключом; package forge.vintage.solo. SHA256 APK/сертификат находятся в SHA256SUMS/verification.txt внутри артефакта.
+VintageCardRules is invoked from AiController.canPlaySa. Forge retains timing, restrictions, targets, costs and actual payment. Gaea's Blessing targets self and recycles useful cards; Probe cantrips against empty hands but avoids empty library/draw locks; Trap targets legal hostile spells, can exile multiple spells, and refuses empty or low-value uses. Normal Forge remains fallback. Generic unsupported-card warnings for these three are filtered only for specialist players; card scripts and ordinary Forge AI warnings remain unchanged.
 
-## Что исправлено
+Doomsday has its own mulligan/mana priorities, legal search selections and ordering callback in PlayerControllerAi. Conservative pass-turn pile: Recall, Lotus, Oracle, Force, Ponder. Public locks, life after halving, blue land and known missing roles are checked. No concealed opposing hand or library order is read by these policies. Post-pile fetch activations and cycling are held. Only this pile is implemented; Demonic Consultation is deliberately not cast by the bot. Doomsday/Consultation warnings remain. This is not a verified strong Doomsday pilot.
 
-1. Пользователь сообщил немедленный вылет на OnePlus 13 / OxygenOS16, с сетью и без. Исходный APK воспроизвёл SuperNotCalledException на эмуляторе Android16: run 34242387109, job 102115585617. Асинхронная распаковка в Main возвращала управление до initializeForView; AndroidApplication.onResume падал до Activity.super.onResume, а Main проглатывал исключение.
-2. fixes/forge-gui-android/src/forge/app/Launcher.java: распаковка выполняется вне UI-потока в обычной Activity с индикатором, затем запускается Main. build_fixes.py возвращает синхронную инициализацию Main. UI не заблокирован распаковкой.
-3. ci/startup-smoke.sh и job startup проверяют реальный APK на API36 x86_64. Первая проверка ошибочно искала mResumedActivity; Android16 выводит topResumedActivity/ResumedActivity. Проверка исправлена, данные о foreground Activity по-прежнему обязательны. Повторный run 34244469780 подтвердил исправление вылета и background resume.
-4. Скриншоты показали невидимые русские подписи. Попытка добавить кириллицу в генерируемый набор FSkinFont (a02bb1e, run34244587841) не помогла визуально; её откатили. Текущая сборка переводит подписи VintageSoloScreen и планы колод VintageSolo на поддерживаемый английский через build_fixes.py. Новый скриншот визуально проверен: YOUR DECK, BOT DECK, Auto-pass, Text cards, Controls, Start game читаемы.
+Landscape card table: lands left; creatures centrally; noncreature artifacts/enchantments right; attached auras/equipment stay with host. Fan hand below; compact life/zone HUD; optional phase stops under gear; Game/Players/Log under gear, separate stack fan. Pacing retained: 1000 ms after bot land/spell, 500 ms per bot step/phase, off UI thread.
 
-Правила, состав колод и поведение бота в этой серии исправлений не изменялись.
+Floating mana blocks implicit no-action/phase-skip passes on an empty stack, with existing manual mana-loss confirmation enabled. Normal rules for clearing mana between steps/phases remain. The original phone report was not reproduced as an engine subtraction bug.
 
-## Проверки и пределы
+Russian text covers all 84 distinct deck cards plus reverse face and support tokens/effects; original English names retained. Custom translations, not claimed official. Bundled Roboto supports Cyrillic. Downloaded printed images can be English; translated rule text remains available in the client.
 
-| Проверка | Результат |
-|---|---|
-| Полная компиляция / Checkstyle / подпись APK / состав ресурсов | PASS |
-| 18 локальных assertions; синтаксис 14 Java-файлов; три колоды 60 карт и pinned B/R | PASS |
-| Чистая установка, офлайн-запуск API36 x86_64 | PASS |
-| Процесс жив 180 секунд; Main foreground после HOME/возврата | PASS |
-| Видимое меню и подписи по скриншоту | PASS |
-| Новый APK на физическом OnePlus13/OxygenOS16 | ОЖИДАЕТ ПОЛЬЗОВАТЕЛЯ |
-| Начало и полная партия | НЕ ПРОВЕРЕНЫ; полных партий 0 |
-| Матрица матчапов / сравнение со штатным ИИ | 0 партий |
-| Профильный бот в реальной игре / подтверждение силы | НЕ ПРОВЕРЕНО |
-| Восстановление партии после закрытия процесса | НЕ РЕАЛИЗОВАНО |
+Картинки колод gathers exact PaperCard printings from ALL FOUR lists, removes duplicates, includes back faces and needed token images. Explicit-list GuiDownloadFilteredCardImages path does not enumerate all printings, synchronize sets or download bulk metadata. Existing files skipped; compact background progress/cancel dialog. Cache persists for offline use. Text-card mode remains usable without images.
 
-Тест выживания процесса сам по себе не проверяет отрисовку; здесь дополнительно просмотрен screen.png. Не называть бота усиленным: общий поиск последовательностей и полный аудит скрытой информации fallback не завершены. Боевые решения и большая часть оплаты/комбо остаются штатными Forge. Первый запуск пишет нефатальные предупреждения о ещё отсутствующем preferences-файле; влияние сохранения настроек отдельно не проверялось.
+## Actually checked
 
-## Воспроизведение
+- 20 local assertions; syntax parsing of 31 Java files.
+- Four decks: 60 cards each; scripts present, counts/B&R checked against pinned Forge data. This is not a separate current WotC legality audit.
+- Russian coverage and Oracle mana-symbol preservation.
+- Full compilation and Checkstyle.
+- 11 real Forge tests: 5 mana/Russian tests; 5 card-policy/effect tests; 1 image-plan/cache test. Final run: 0 failures, 0 errors, 0 skips; no headless status-widget exception.
+- Image test constructs a small exact-printing queue (<=100 files in its two-token fixture), verifies no bulk/ZIP URL and skips an existing file; it does NOT download remote images.
+- Android 16 API36 x86_64 emulator: clean install, offline first launch, 180-second survival, HOME/resume, game entry and gear menu; no detected FATAL/ANR.
+- Visually reviewed first-launch, match-4 and match-settings screenshots: download button, actual seven-card fan, opponent land left, noncreature artifact right, open gear menu. Bot actions progressed between captures.
 
-Команды в BUILD.md. Порядок: checkout pinned Forge → git apply vintage-solo.patch → cp -a ../project/fixes/. . → python3 ../project/build_fixes.py → bootstrap → build.sh → check_apk.py. Полный source artifact уже содержит применённые исправления; не применять повторно.
+## Not checked / limitations
 
-Сохранён исходный patch 186203 bytes. build_fixes.py также удаляет девять unused imports, найденных ранним CI. Checkstyle не отключён; shell:bash обеспечивает pipefail. Все ресурсы и лицензия GPL сохранены. Репозиторий сборки не хранит второй независимый движок.
+- Physical OnePlus 13 / OxygenOS 16 on this build.
+- Actual image transfer from Scryfall/CardForge on the phone; optional illustrations require internet once.
+- Completed automated full games: **0**. All 16 ordered deck pairings / first-player swaps remain to be run.
+- Specialist vs baseline win-rate comparison: **not run**. No claim of higher human win rate.
+- All combat/stack interactions, all Doomsday piles, tutor/protection variations and long-game stability.
+- Precise pacing on physical phone; recovery of a game after process death (not implemented).
 
-## Следующее действие
+## Reproduction and continuation
 
-Дать пользователю новую ссылку APK и попросить повторный запуск/Start game на OnePlus. После конкретного отчёта чинить ошибку и повторять соответствующий тест. Игровые функции пока не расширять. Корневой HANDOFF новее исторического HANDOFF внутри полного Forge source artifact, создаваемого перед CI.
+See BUILD.md for exact commands. Restore in order:
+1. Checkout pinned upstream Forge.
+2. Apply `vintage-solo.patch`.
+3. Copy `fixes/` overlay.
+4. Run `build_fixes.py`, which applies `presentation.patch` LAST.
+5. Run bootstrap.sh, build.sh and check_apk.py.
 
+Do not apply patches again to the complete source artifact. Tools pinned by bootstrap: Maven 3.8.1, Android CLI 11076708, platform35/build-tools35.0.0, Forge Android Maven plugin4.6.2, JDK17. Main test command:
+`mvn -B -pl forge-gui-desktop -am '-Dtest=Vintage*RegressionTest' -DfailIfNoTests=false -Dsurefire.failIfNoSpecifiedTests=false test`
 
-## Current batch (2026-09-09)
-Pacing retained. Gear + stack fan, lands right, larger battlefield cards, Russian card text with Cyrillic font fix, floating-mana stop before implicit phase advance. No confirmed engine loss bug yet. Added real mana regression tests (3->2->1, preview under tax, Workshop restrictions). Local 18 assertions and 21 Java syntax parses passed. Build/Android smoke pending for this commit; full games/bot comparisons remain untested. Complete resulting source and APK are uploaded by workflow. `build_fixes.py` now applies `presentation.patch` after legacy corrections. See source tools/vintage-solo/TRANSLATION.md for custom translation scope.
+Current startup smoke taps the relocated confirmation at x92%, y88%, then gear at x98%, y3%. Earlier runs survived but remained on a modal due wrong coordinates; only the final screenshot review above establishes game entry.
+
+Earlier CI issues fixed: overloaded Card::getName method reference, unused test import, Iterable target access, actual stack-zone setup in Trap test, and UI progress callback in a deliberately headless image-plan test. No test gates were disabled.
+
+Next useful work: user phone verification and image download; finish full games with all four decks and both first-player assignments, measure bot comparisons, extend Doomsday lines based on reproducible failures. Batch changes; don't push each small edit. Root HANDOFF is newer than the historical source-artifact snapshot written before CI completed.
