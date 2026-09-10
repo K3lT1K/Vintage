@@ -1,8 +1,8 @@
 diff --git a/HANDOFF.md b/HANDOFF.md
-index 95768df..21748dc 100644
+index 95768df..2cc2027 100644
 --- a/HANDOFF.md
 +++ b/HANDOFF.md
-@@ -1,149 +1,123 @@
+@@ -1,149 +1,137 @@
 -# Vintage Solo Android — HANDOFF
 -
 -Обновлено 2026-09-08. Сохранённая база Forge продолжена, повторного клонирования
@@ -152,6 +152,20 @@ index 95768df..21748dc 100644
 -GitHub tools. Попросить владельца создать Private repo с README через
 -https://github.com/new?name=vintage-solo, предоставить доступ GitHub app и
 -прислать URL. Это технически недоступная операция, не повторное согласование.
++# Unified Russian cards + image recovery (2026-09-10)
++Removed text-only checkbox. Vintage screen/start forces UI_DISABLE_CARD_IMAGES
++false and border mode Art: downloaded scans contribute illustrations while
++Russian names/rules are rendered, also in zoom. Battlefield hides rules and
++expands art into the former blank rules area. Tokens now use translations.
++ImageKeys.refreshDownloadedImages invalidates missing/edition/directory caches;
++refresh PaperCard.hasImage and card-art cache after download, even partial.
++Downloader requeues empty/header-invalid/HTML files; header check does not
++prove a full image decodes. Added real-image fixture and cache recovery test.
++Portraits centered with life badge and hand below. Amber buttons retained.
++Coverage: 84 main names / 85 faces + 6 token scripts + 3 related entries = 94.
++Local: 20 assertions, 36 syntax parses, four legal-count decks, coverage checks.
++CI build, runtime image-cache regression and device appearance pending.
++
 +# Amber UI update (2026-09-10)
 +FButton now uses a shared orange/copper renderer outside Adventure. Prompt
 +buttons reuse it (secondary remains dark). 180ms ForgeAnimation press/release
@@ -804,6 +818,24 @@ index 91f1a77..5289f75 100644
              return null;
          }
          Card best = null;
+diff --git a/forge-core/src/main/java/forge/ImageKeys.java b/forge-core/src/main/java/forge/ImageKeys.java
+index 205bf29..f0d6ddf 100644
+--- a/forge-core/src/main/java/forge/ImageKeys.java
++++ b/forge-core/src/main/java/forge/ImageKeys.java
+@@ -97,6 +97,13 @@ public final class ImageKeys {
+     public static void clearMissingCards() {
+         missingCards.clear();
+     }
++    /** Call after a batch download, before refreshing PaperCard.hasImage caches. */
++    public static void refreshDownloadedImages() {
++        missingCards.clear();
++        cachedCards.clear();
++        cachedContent.clear();
++        editionImageLookup.clear();
++    }
+     public static File getCachedCardsFile(String key) {
+         return cachedCards.get(key);
+     }
 diff --git a/forge-core/src/main/java/forge/deck/VintageSolo.java b/forge-core/src/main/java/forge/deck/VintageSolo.java
 index 1d9c0d6..79eaf8b 100644
 --- a/forge-core/src/main/java/forge/deck/VintageSolo.java
@@ -1091,10 +1123,10 @@ index 0000000..9c429ad
 +}
 diff --git a/forge-gui-desktop/src/test/java/forge/gui/download/VintageImagesRegressionTest.java b/forge-gui-desktop/src/test/java/forge/gui/download/VintageImagesRegressionTest.java
 new file mode 100644
-index 0000000..010b239
+index 0000000..7a69c90
 --- /dev/null
 +++ b/forge-gui-desktop/src/test/java/forge/gui/download/VintageImagesRegressionTest.java
-@@ -0,0 +1,39 @@
+@@ -0,0 +1,71 @@
 +package forge.gui.download;
 +
 +import forge.ai.AITest;
@@ -1130,8 +1162,40 @@ index 0000000..010b239
 +        File cached = new File(plan.keySet().iterator().next());
 +        Assert.assertTrue(cached.getParentFile().isDirectory() || cached.getParentFile().mkdirs());
 +        Assert.assertTrue(cached.createNewFile());
-+        try { Assert.assertFalse(new DeckImages(cards).plan().containsKey(cached.getAbsolutePath())); }
++        try {
++            Assert.assertTrue(new DeckImages(cards).plan().containsKey(cached.getAbsolutePath()), "empty download must retry");
++            java.nio.file.Files.writeString(cached.toPath(), "<html>This is an error response, not a card image.</html>");
++            Assert.assertTrue(new DeckImages(cards).plan().containsKey(cached.getAbsolutePath()));
++            java.nio.file.Files.write(cached.toPath(), java.util.Arrays.copyOf(png(), 40));
++            Assert.assertTrue(new DeckImages(cards).plan().containsKey(cached.getAbsolutePath()), "truncated PNG must retry");
++            java.nio.file.Files.write(cached.toPath(), png());
++            Assert.assertTrue(GuiDownloadFilteredCardImages.isUsableImage(cached));
++            Assert.assertFalse(new DeckImages(cards).plan().containsKey(cached.getAbsolutePath()));
++        }
 +        finally { Assert.assertTrue(cached.delete()); }
++    }
++
++    private byte[] png() {
++        return java.util.Base64.getDecoder().decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a2ioAAAAASUVORK5CYII=");
++    }
++    @Test public void downloadRefreshRecoversPreviouslyMissingEditionAndPaperCard() throws Exception {
++        PaperCard card = forge.model.FModel.getMagicDb().getCommonCards().getCard("Black Lotus", "LEA");
++        String key = forge.util.ImageUtil.getImageKey(card, "", true);
++        File file = new File(ForgeConstants.CACHE_CARD_PICS_DIR, key + ".jpg");
++        Assert.assertFalse(file.exists(), "isolated image-cache fixture required");
++        forge.ImageKeys.refreshDownloadedImages();
++        Assert.assertFalse(card.hasImage(true));
++        Assert.assertTrue(file.getParentFile().isDirectory() || file.getParentFile().mkdirs());
++        try {
++            java.nio.file.Files.write(file.toPath(), png());
++            forge.ImageKeys.refreshDownloadedImages();
++            Assert.assertTrue(card.hasImage(true));
++            Assert.assertNotNull(forge.ImageKeys.getImageFile(key));
++        } finally {
++            java.nio.file.Files.deleteIfExists(file.toPath());
++            forge.ImageKeys.refreshDownloadedImages();
++            card.hasImage(true);
++        }
 +    }
 +}
 diff --git a/forge-gui-mobile/src/forge/Forge.java b/forge-gui-mobile/src/forge/Forge.java
@@ -1189,7 +1253,7 @@ index ec6f78e..da10f39 100644
          }
  
 diff --git a/forge-gui-mobile/src/forge/card/CardImageRenderer.java b/forge-gui-mobile/src/forge/card/CardImageRenderer.java
-index 6abf9d8..2ae551f 100644
+index 6abf9d8..1f6f5dd 100644
 --- a/forge-gui-mobile/src/forge/card/CardImageRenderer.java
 +++ b/forge-gui-mobile/src/forge/card/CardImageRenderer.java
 @@ -121,6 +121,11 @@ public class CardImageRenderer {
@@ -1204,7 +1268,28 @@ index 6abf9d8..2ae551f 100644
          updateStaticFields(w, h);
  
          float blackBorderThickness = w * BLACK_BORDER_THICKNESS_RATIO;
-@@ -228,7 +233,7 @@ public class CardImageRenderer {
+@@ -190,6 +195,20 @@ public class CardImageRenderer {
+         if (state.isCreature() || state.isPlaneswalker() || state.hasPrintedPT() || state.isBattle()) {
+             ptBoxHeight = 2 * getCapHeight(PT_FONT);
+         }
++        if (hideRules && !isDungeon) {
++            // Art occupies the rules area on the table; zoom keeps the full printed card.
++            float footer = Math.max(typeBoxHeight, ptBoxHeight);
++            float fullArtHeight = Math.max(0, h - headerHeight - footer - outerBorderThickness);
++            drawArt(card, g, x + artInset, y, artWidth, fullArtHeight, altState, isFaceDown);
++            y += fullArtHeight;
++            drawTypeLine(g, state, canShow, headerColors, x, y, w, footer, noText, false, false);
++            if (onTop && ptBoxHeight > 0) {
++                Color[] ptColors = FSkinColor.tintColors(Color.WHITE, colors, CardRenderer.PT_BOX_TINT);
++                drawPtBox(g, state, ptColors, x, y, w, ptBoxHeight, noText);
++            }
++            return;
++        }
++
+         //space for artist
+         textBoxHeight -= 2 * getCapHeight(PT_FONT);
+         PaperCard paperCard = null;
+@@ -228,7 +247,7 @@ public class CardImageRenderer {
          if (isSaga) {
              //draw text box
              Color[] textBoxColors = FSkinColor.tintColors(Color.WHITE, colors, CardRenderer.TEXT_BOX_TINT);
@@ -1213,7 +1298,7 @@ index 6abf9d8..2ae551f 100644
              y += textBoxHeight;
  
              //draw type line
-@@ -237,7 +242,7 @@ public class CardImageRenderer {
+@@ -237,7 +256,7 @@ public class CardImageRenderer {
          } else if (isClass) {
              //draw text box
              Color[] textBoxColors = FSkinColor.tintColors(Color.WHITE, colors, CardRenderer.TEXT_BOX_TINT);
@@ -1222,7 +1307,7 @@ index 6abf9d8..2ae551f 100644
              y += textBoxHeight;
  
              //draw type line
-@@ -247,7 +252,7 @@ public class CardImageRenderer {
+@@ -247,7 +266,7 @@ public class CardImageRenderer {
              if (!drawDungeon) {
                  //draw textbox
                  Color[] textBoxColors = FSkinColor.tintColors(Color.WHITE, colors, CardRenderer.TEXT_BOX_TINT);
@@ -1231,7 +1316,7 @@ index 6abf9d8..2ae551f 100644
                  y += textBoxHeight;
              }
              drawTypeLine(g, state, canShow, headerColors, x, y, w, typeBoxHeight, noText, false, false);
-@@ -259,7 +264,7 @@ public class CardImageRenderer {
+@@ -259,7 +278,7 @@ public class CardImageRenderer {
  
              //draw text box
              Color[] textBoxColors = FSkinColor.tintColors(Color.WHITE, colors, CardRenderer.TEXT_BOX_TINT);
@@ -1240,6 +1325,17 @@ index 6abf9d8..2ae551f 100644
              y += textBoxHeight;
          }
  
+@@ -668,10 +687,6 @@ public class CardImageRenderer {
+         } else {
+             boolean needTranslation = true;
+             String text = "";
+-            if (card.isToken()) {
+-                if (card.getCloneOrigin() == null)
+-                    needTranslation = false;
+-            }
+             if (drawAdventure) {
+                 // draw left textbox text
+                 if (noText)
 diff --git a/forge-gui-mobile/src/forge/card/CardRenderer.java b/forge-gui-mobile/src/forge/card/CardRenderer.java
 index 7d28b8b..c942330 100644
 --- a/forge-gui-mobile/src/forge/card/CardRenderer.java
@@ -1614,7 +1710,7 @@ index 95152eb..8869638 100644
      }
  
 diff --git a/forge-gui-mobile/src/forge/screens/match/views/VPlayerPanel.java b/forge-gui-mobile/src/forge/screens/match/views/VPlayerPanel.java
-index 69f8c6d..4c90127 100644
+index 69f8c6d..64aa5c7 100644
 --- a/forge-gui-mobile/src/forge/screens/match/views/VPlayerPanel.java
 +++ b/forge-gui-mobile/src/forge/screens/match/views/VPlayerPanel.java
 @@ -84,11 +84,56 @@ public class VPlayerPanel extends FContainer {
@@ -1636,19 +1732,19 @@ index 69f8c6d..4c90127 100644
 +        initW = width;
 +        initH = height;
 +        float pad = Math.max(3, height * 0.025f);
-+        float avatarSize = Math.min(width * 0.065f, height * (isBottomPlayer ? 0.30f : 0.31f));
-+        float hudY = isBottomPlayer ? height - avatarSize - pad : pad;
-+        float avatarX = isBottomPlayer ? width * 0.085f : width * 0.47f;
++        float avatarSize = Math.min(width * 0.065f, height * (isBottomPlayer ? 0.20f : 0.31f));
++        float hudY = isBottomPlayer ? height * 0.39f : pad;
++        float avatarX = (width - avatarSize) / 2;
 +        avatar.setBounds(avatarX, hudY, avatarSize, avatarSize);
-+        lblLife.setBounds(avatarX + avatarSize + pad, hudY, avatarSize * 0.85f, avatarSize);
++        lblLife.setBounds(avatarX + avatarSize * 0.1f, hudY + avatarSize * 0.68f, avatarSize * 0.8f, avatarSize * 0.5f);
 +        float fieldY = isBottomPlayer ? pad : avatarSize + pad * 2;
-+        float fieldH = isBottomPlayer ? height * 0.51f : height - fieldY - pad;
++        float fieldH = isBottomPlayer ? height * 0.40f : height - fieldY - pad;
 +        field.setFieldModifier(0);
 +        field.setCommandZoneWidth(0);
 +        field.setBounds(width * 0.035f, fieldY, width * 0.93f, fieldH);
 +        float trayX = width * (isBottomPlayer ? 0.23f : 0.16f);
-+        float trayY = isBottomPlayer ? height * 0.47f : fieldY;
-+        float trayH = isBottomPlayer ? height * 0.52f : height - fieldY;
++        float trayY = isBottomPlayer ? height * 0.64f : fieldY;
++        float trayH = isBottomPlayer ? height * 0.36f : height - fieldY;
 +        for (InfoTab tab : tabs) tab.setDisplayBounds(trayX, trayY, width * (isBottomPlayer ? 0.55f : 0.60f), trayH);
 +        // Keep the hand available even after Forge closes a temporary mana/target display.
 +        InfoTabZone hand = zoneTabs.get(ZoneType.Hand);
@@ -1691,13 +1787,17 @@ index 69f8c6d..4c90127 100644
          float x = avatar.getRight();
          phaseIndicator.resetFont();
          phaseIndicator.setBounds(x, 0, avatar.getWidth() * 0.6f, height);
-@@ -503,6 +550,25 @@ public class VPlayerPanel extends FContainer {
+@@ -503,6 +550,29 @@ public class VPlayerPanel extends FContainer {
  
      @Override
      public void drawBackground(Graphics g) {
 +        if (isTableLayout()) {
-+            g.drawRect(1.5f, new com.badlogic.gdx.graphics.Color(0.92f, 0.45f, 0.15f, 0.85f),
-+                    avatar.getLeft()-2, avatar.getTop()-2, avatar.getWidth()+4, avatar.getHeight()+4);
++            float cx = avatar.getLeft() + avatar.getWidth()/2;
++            float cy = avatar.getTop() + avatar.getHeight()/2;
++            g.fillCircle(new com.badlogic.gdx.graphics.Color(0.04f, 0.025f, 0.015f, 1), cx, cy, avatar.getWidth()*0.64f);
++            g.drawCircle(2, new com.badlogic.gdx.graphics.Color(0.80f, 0.39f, 0.12f, 0.9f), cx, cy, avatar.getWidth()*0.60f);
++            g.fillCircle(new com.badlogic.gdx.graphics.Color(0.055f, 0.035f, 0.02f, 1),
++                    lblLife.getLeft()+lblLife.getWidth()/2, lblLife.getTop()+lblLife.getHeight()/2, lblLife.getHeight()*0.58f);
 +            if (selectedTab != null && selectedTab != zoneTabs.get(ZoneType.Hand)) {
 +                VDisplayArea area = selectedTab.getDisplayArea();
 +                if (area != null) g.fillRect(new com.badlogic.gdx.graphics.Color(0.065f, 0.045f, 0.03f, 0.96f),
@@ -1717,7 +1817,7 @@ index 69f8c6d..4c90127 100644
          float y;
          InfoTab infoTab = selectedTab;
          float pad = Forge.isHorizontalTabLayout() ? avatarWidth / 16f : 0f;
-@@ -600,6 +666,14 @@ public class VPlayerPanel extends FContainer {
+@@ -600,6 +670,14 @@ public class VPlayerPanel extends FContainer {
  
          @Override
          public void draw(Graphics g) {
@@ -1896,10 +1996,10 @@ index ea92bd0..45dd3b8 100644
          final float radioButtonHeight = radProxyNone.getAutoSizeBounds().height;
  
 diff --git a/forge-gui-mobile/src/forge/screens/vintage/VintageSoloScreen.java b/forge-gui-mobile/src/forge/screens/vintage/VintageSoloScreen.java
-index 5815b06..bfa6dcd 100644
+index 5815b06..2d9d522 100644
 --- a/forge-gui-mobile/src/forge/screens/vintage/VintageSoloScreen.java
 +++ b/forge-gui-mobile/src/forge/screens/vintage/VintageSoloScreen.java
-@@ -37,17 +37,19 @@ public final class VintageSoloScreen extends FScreen {
+@@ -37,30 +37,38 @@ public final class VintageSoloScreen extends FScreen {
      private static VintageSoloScreen instance;
      private final FLabel title = add(new FLabel.Builder().text("VINTAGE • SOLO")
              .font(FSkinFont.get(26)).align(Align.center).build());
@@ -1916,7 +2016,6 @@ index 5815b06..bfa6dcd 100644
 -    private final FButton start = add(new FButton("Start game"));
 -    private final FButton help = add(new FButton("Controls"));
 +    private final FCheckBox autoPass = add(new FCheckBox("Автопередача без действий", true));
-+    private final FCheckBox textCards = add(new FCheckBox("Текстовые карты", true));
 +    private final FButton start = add(new FButton("Начать партию"));
 +    private final FButton help = add(new FButton("Управление"));
 +    private final FButton pictures = add(new FButton("Картинки колод"));
@@ -1925,7 +2024,14 @@ index 5815b06..bfa6dcd 100644
  
      private VintageSoloScreen() {
          super((Header) null);
-@@ -56,11 +58,12 @@ public final class VintageSoloScreen extends FScreen {
++        // One presentation: Russian rendered text plus optional cached illustration.
++        FModel.getPreferences().setPref(FPref.UI_DISABLE_CARD_IMAGES, false);
++        FModel.getPreferences().setPref(FPref.UI_ENABLE_BORDER_MASKING, "Art");
++        FModel.getPreferences().save();
++        Forge.enableUIMask = "Art";
++        GuiBase.getInterface().clearImageCache();
+         humanDeck.setItems(Archetype.values(), Archetype.INITIATIVE);
+         botDeck.setItems(Archetype.values(), Archetype.OATH);
          humanDeck.setChangedHandler(e -> updatePlans());
          botDeck.setChangedHandler(e -> updatePlans());
          start.setCommand(e -> startMatch());
@@ -1942,7 +2048,7 @@ index 5815b06..bfa6dcd 100644
          updatePlans();
      }
      public static void show() {
-@@ -85,6 +88,44 @@ public final class VintageSoloScreen extends FScreen {
+@@ -85,24 +93,65 @@ public final class VintageSoloScreen extends FScreen {
          VintageSolo.configure(deck, type, specialist);
          return deck;
      }
@@ -1965,13 +2071,13 @@ index 5815b06..bfa6dcd 100644
 +                    pictures.setEnabled(true);
 +                    new forge.screens.settings.GuiDownloader(
 +                            new forge.gui.download.GuiDownloadFilteredCardImages(cards, tokens), finished -> {
-+                                forge.ImageKeys.clearMissingCards();
++                                // Also show already downloaded cards after a partial/cancelled batch.
++                                FModel.getPreferences().setPref(FPref.UI_DISABLE_CARD_IMAGES, false);
++                                FModel.getPreferences().save();
++                                forge.ImageKeys.refreshDownloadedImages();
++                                for (forge.item.PaperCard card : cards) card.hasImage(true);
++                                forge.card.CardRenderer.clearcardArtCache();
 +                                GuiBase.getInterface().clearImageCache();
-+                                if (finished) {
-+                                    textCards.setSelected(false);
-+                                    FModel.getPreferences().setPref(FPref.UI_DISABLE_CARD_IMAGES, false);
-+                                    FModel.getPreferences().save();
-+                                }
 +                            }).compact().show();
 +                });
 +            } catch (Exception ex) {
@@ -1987,7 +2093,14 @@ index 5815b06..bfa6dcd 100644
      private void startMatch() {
          if (starting || Forge.isLoadingaMatch()) { return; }
          starting = true;
-@@ -96,13 +137,14 @@ public final class VintageSoloScreen extends FScreen {
+         start.setEnabled(false);
++        FModel.getPreferences().setPref(FPref.UI_DISABLE_CARD_IMAGES, false);
++        FModel.getPreferences().setPref(FPref.UI_ENABLE_BORDER_MASKING, "Art");
++        Forge.enableUIMask = "Art";
+         Archetype human = humanDeck.getSelectedItem();
+         Archetype bot = botDeck.getSelectedItem();
+-        FModel.getPreferences().setPref(FPref.UI_DISABLE_CARD_IMAGES, textCards.isSelected());
+         FModel.getPreferences().setPref(FPref.YIELD_AUTO_PASS_NO_ACTIONS, autoPass.isSelected());
          FModel.getPreferences().setPref(FPref.YIELD_SKIP_PHASE_DELAY, true);
          FModel.getPreferences().setPref(FPref.YIELD_SKIP_RESOLVE_DELAY, true);
          FModel.getPreferences().setPref(FPref.UI_SHOW_AUTOTAP_PREVIEW, true);
@@ -2003,9 +2116,20 @@ index 5815b06..bfa6dcd 100644
                      try {
                          RegisteredPlayer hp = new RegisteredPlayer(hd).setPlayer(GamePlayerUtil.getGuiPlayer());
                          RegisteredPlayer bp = new RegisteredPlayer(bd).setPlayer(GamePlayerUtil.createAiPlayer("Vintage Bot", "Default"));
-@@ -152,6 +194,7 @@ public final class VintageSoloScreen extends FScreen {
+@@ -130,7 +179,7 @@ public final class VintageSoloScreen extends FScreen {
+         });
+     }
+     @Override protected void drawBackground(Graphics g) {
+-        g.fillRect(new Color(0.035f, 0.075f, 0.08f, 1), 0, 0, getWidth(), getHeight());
++        g.fillRect(new Color(0.075f, 0.045f, 0.026f, 1), 0, 0, getWidth(), getHeight());
+         g.drawLine(Utils.scale(2), new Color(0.67f, 0.52f, 0.29f, 1), getWidth() * .08f,
+                 getHeight() * .2f, getWidth() * .92f, getHeight() * .2f);
+     }
+@@ -150,8 +199,8 @@ public final class VintageSoloScreen extends FScreen {
+         botPlan.setBounds(pad + col + gap, y, col, row);
+         y += row + gap * .5f;
          autoPass.setBounds(pad, y, col, row);
-         textCards.setBounds(pad + col + gap, y, col, row);
+-        textCards.setBounds(pad + col + gap, y, col, row);
          start.setBounds(width * .3f, height - pad - row * 1.2f, width * .4f, row * 1.2f);
 -        help.setBounds(pad, height - pad - row, col * .48f, row);
 +        help.setBounds(pad, height - pad - row, width * .21f, row);
@@ -2257,7 +2381,7 @@ index 0000000..b931663
 +1 Undercity Sewers
 +4 Underground Sea
 diff --git a/forge-gui/src/main/java/forge/gui/download/GuiDownloadFilteredCardImages.java b/forge-gui/src/main/java/forge/gui/download/GuiDownloadFilteredCardImages.java
-index e2b9051..53a16ac 100644
+index e2b9051..307d3ed 100644
 --- a/forge-gui/src/main/java/forge/gui/download/GuiDownloadFilteredCardImages.java
 +++ b/forge-gui/src/main/java/forge/gui/download/GuiDownloadFilteredCardImages.java
 @@ -29,20 +29,42 @@ import java.util.function.Predicate;
@@ -2316,7 +2440,7 @@ index e2b9051..53a16ac 100644
 +            if (cancel) break;
 +            if (!token.matches("[a-z0-9_]+")) continue;
 +            File destination = new File(ForgeConstants.CACHE_TOKEN_PICS_DIR, token + ".jpg");
-+            if (destination.isFile()) continue;
++            if (isUsableImage(destination)) continue;
 +            String url = null;
 +            for (var entry : manifest) {
 +                if (entry.getLeft().equals(token + ".jpg")) { url = entry.getRight(); break; }
@@ -2330,6 +2454,40 @@ index e2b9051..53a16ac 100644
      private void syncSetsOneByOne(List<String> needSync) throws UnsupportedEncodingException {
          int setIndex = 0;
          for (String setCode : needSync) {
+@@ -121,6 +162,24 @@ public class GuiDownloadFilteredCardImages extends GuiDownloadService {
+ 
+     // -------------------------------------------------------------------------
+ 
++    /** Reject empty/partial headers and HTML error pages left by interrupted downloads. */
++    public static boolean isUsableImage(File file) {
++        if (!file.isFile() || file.length() < 32) return false;
++        try (java.io.RandomAccessFile in = new java.io.RandomAccessFile(file, "r")) {
++            byte[] header = new byte[8];
++            in.readFully(header);
++            if ((header[0] & 255) == 255 && (header[1] & 255) == 216 && (header[2] & 255) == 255) {
++                in.seek(in.length() - 2);
++                return in.readUnsignedShort() == 0xffd9;
++            }
++            if (java.util.Arrays.equals(header, new byte[] {(byte) 137, 80, 78, 71, 13, 10, 26, 10})) {
++                in.seek(in.length() - 12);
++                return in.readInt() == 0 && in.readInt() == 0x49454e44;
++            }
++            return false;
++        } catch (java.io.IOException e) { return false; }
++    }
++
+     private static void addIfMissing(PaperCard c, String face, Map<String, String> downloads) {
+         final String imageKey = ImageUtil.getImageKey(c, face, true);
+         if (imageKey == null) return;
+@@ -130,7 +189,7 @@ public class GuiDownloadFilteredCardImages extends GuiDownloadService {
+                              (!imageKey.contains(".full") ? ".fullborder" : "");
+         final File destFb = new File(ForgeConstants.CACHE_CARD_PICS_DIR, fbKey + ".jpg");
+ 
+-        if (destFull.exists() || destFb.exists()) return;
++        if (isUsableImage(destFull) || isUsableImage(destFb)) return;
+         if (downloads.containsKey(destFull.getAbsolutePath())) return;
+ 
+         final String url = buildUrl(c, face);
 diff --git a/forge-gui/src/main/java/forge/player/PlayerControllerHuman.java b/forge-gui/src/main/java/forge/player/PlayerControllerHuman.java
 index 0b45b86..d7493e1 100644
 --- a/forge-gui/src/main/java/forge/player/PlayerControllerHuman.java
@@ -2412,10 +2570,10 @@ index 0000000..8fd4307
 +multiple opposing answers. This conservative line may miss available wins.
 diff --git a/tools/vintage-solo/TRANSLATION.md b/tools/vintage-solo/TRANSLATION.md
 new file mode 100644
-index 0000000..9f52030
+index 0000000..d0f3c54
 --- /dev/null
 +++ b/tools/vintage-solo/TRANSLATION.md
-@@ -0,0 +1,22 @@
+@@ -0,0 +1,34 @@
 +# Russian card text
 +
 +This distribution translates the 67 distinct cards in the three bundled decks,
@@ -2438,6 +2596,18 @@ index 0000000..9f52030
 +
 +2026-09-10: extended to all 84 distinct cards across four decks, including
 +17 Doomsday-only cards; complete Oracle mana-symbol counts checked locally.
++
++## 2026-09-10 unified presentation and audit
++No text/image mode switch. The client always renders Russian card text and
++uses downloaded images for their art only, including full-card zoom. Art is
++optional for offline play; missing art falls back within the same presentation.
++The small battlefield card hides rules, full zoom shows them.
++Coverage checked from real deck scripts: 84 distinct main-deck names / 85 card
++faces; 6 reachable token scripts (Construct, Thopter, Spirit, Food, Treasure,
++Skeleton); Undercity, The Initiative, Wrenn and Six Emblem. Total 94 records.
++All main-deck mana symbols are preserved. This is a coverage/structural audit,
++not a claim that every Russian phrase has independent editorial review.
++Removed the renderer exception that suppressed translation of ordinary tokens.
 diff --git a/tools/vintage-solo/build.sh b/tools/vintage-solo/build.sh
 index 722a0e5..a847709 100644
 --- a/tools/vintage-solo/build.sh
@@ -2450,7 +2620,7 @@ index 722a0e5..a847709 100644
 +mvn -B -pl forge-gui-desktop -am '-Dtest=Vintage*RegressionTest' -DfailIfNoTests=false -Dsurefire.failIfNoSpecifiedTests=false test
  mvn -B -P android-test-build verify -Dandroid.sdk.path="$ANDROID_SDK_ROOT" -Dandroid.buildToolsVersion=35.0.0 -Dmaven.test.skip=true
 diff --git a/tools/vintage-solo/check.py b/tools/vintage-solo/check.py
-index afbe2bf..706fd27 100644
+index afbe2bf..5f4319b 100644
 --- a/tools/vintage-solo/check.py
 +++ b/tools/vintage-solo/check.py
 @@ -8,7 +8,13 @@ javac=['javac'] if shutil.which('javac') else ['java','--module','jdk.compiler/c
@@ -2468,7 +2638,13 @@ index afbe2bf..706fd27 100644
  forge-gui-desktop/src/main/java/forge/view/VintageBenchmark.java
  forge-gui-desktop/src/main/java/forge/view/Main.java
  forge-ai/src/main/java/forge/ai/AiController.java
-@@ -21,7 +27,22 @@ forge-gui-mobile/src/forge/Forge.java
+@@ -16,12 +22,28 @@ forge-ai/src/main/java/forge/ai/PlayerControllerAi.java
+ forge-ai/src/main/java/forge/ai/ability/CounterAi.java
+ forge-ai/src/main/java/forge/ai/vintage/VintageStrategy.java
+ forge-core/src/main/java/forge/deck/VintageSolo.java
++forge-core/src/main/java/forge/ImageKeys.java
+ forge-gui-android/src/forge/app/Main.java
+ forge-gui-mobile/src/forge/Forge.java
  forge-gui-mobile/src/forge/assets/AssetsDownloader.java
  forge-gui-mobile/src/forge/screens/home/HomeScreen.java
  forge-gui-mobile/src/forge/screens/match/MatchScreen.java
@@ -2492,7 +2668,7 @@ index afbe2bf..706fd27 100644
  syntax=subprocess.check_output(['java','-cp',str(classes),'ParseJava',*map(str,paths)],text=True)
  index={}
  for p in (ROOT/'forge-gui/res/cardsfolder').rglob('*.txt'):
-@@ -43,6 +64,14 @@ for p in sorted((ROOT/'forge-gui/res/vintage-solo').glob('*.dck')):
+@@ -43,6 +65,33 @@ for p in sorted((ROOT/'forge-gui/res/vintage-solo').glob('*.dck')):
          assert n <= (1 if name in restricted else 99 if name in ['Plains','Island','Swamp','Mountain','Forest'] else 4),(p,name,'count illegal')
          entries.append(dict(name=name,count=n,script=str(script.relative_to(ROOT)),ai_removal_flag='RemAIDeck:True' in data, runtime='NOT TESTED'))
      decks[p.stem]=dict(total=60,unique=len(cards),cards=entries)
@@ -2504,6 +2680,25 @@ index afbe2bf..706fd27 100644
 +        oracle = re.search(r'^Oracle:(.+)$', index[name][1], re.M)
 +        if oracle:
 +            assert collections.Counter(re.findall(r'\{[^}]+\}', oracle[1])) == collections.Counter(re.findall(r'\{[^}]+\}', translations[name][3])), (name, 'translation mana symbols')
++# Audit all faces and reachable token names, not just the 60-card front names.
++covered_faces=set()
++token_ids={'c_a_treasure_sac','b_4_1_skeleton_menace'}
++for deck in decks.values():
++    for card in deck['cards']:
++        script=index[card['name']][1]
++        covered_faces.update(re.findall(r'^Name:(.+)$',script,re.M))
++        token_ids.update(re.findall(r'TokenScript\$ ([a-z0-9_]+)',script))
++for name in covered_faces:
++    assert name in translations and len(translations[name])==4, (name,'missing face translation')
++for token in token_ids:
++    paths=list((ROOT/'forge-gui/res/tokenscripts').rglob(token+'.txt'))
++    assert paths, (token,'missing token implementation')
++    for path in paths:
++        name=re.search(r'^Name:(.+)$',path.read_text(),re.M).group(1)
++        assert name in translations and len(translations[name]) == 4 and all(translations[name][:3]), (name,'missing token translation')
++for name in ['Undercity','The Initiative','Wrenn and Six Emblem']:
++    assert name in translations and all(translations[name]), (name,'missing related translation')
++print(f'PASS Russian coverage: {len(covered_faces)} card faces, {len(token_ids)} token scripts, 3 related entries')
  report=dict(review_date='2026-09-08',runtime_date=str(datetime.date.today()),upstream=(ROOT/'UPSTREAM_COMMIT.txt').read_text().strip(),local_assertions=checks.strip(),syntax=syntax.strip(),decks=decks,legality='Counts and B/R against pinned Forge data only; runtime format check also wired before match',full_games=0,apk_built=False,android_launch='NOT TESTED',bot_comparison='NOT RUN',matchups='All 9 ordered pairs, both first-player assignments: NOT RUN')
  (OUT/'local-checks.json').write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n')
 -print(checks+syntax+'PASS three 60-card decks: scripts present and pinned Vintage B/R counts valid')

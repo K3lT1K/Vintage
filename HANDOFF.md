@@ -1,3 +1,17 @@
+# Unified Russian cards + image recovery (2026-09-10)
+Removed text-only checkbox. Vintage screen/start forces UI_DISABLE_CARD_IMAGES
+false and border mode Art: downloaded scans contribute illustrations while
+Russian names/rules are rendered, also in zoom. Battlefield hides rules and
+expands art into the former blank rules area. Tokens now use translations.
+ImageKeys.refreshDownloadedImages invalidates missing/edition/directory caches;
+refresh PaperCard.hasImage and card-art cache after download, even partial.
+Downloader requeues empty/header-invalid/HTML files; header check does not
+prove a full image decodes. Added real-image fixture and cache recovery test.
+Portraits centered with life badge and hand below. Amber buttons retained.
+Coverage: 84 main names / 85 faces + 6 token scripts + 3 related entries = 94.
+Local: 20 assertions, 36 syntax parses, four legal-count decks, coverage checks.
+CI build, runtime image-cache regression and device appearance pending.
+
 # Amber UI update (2026-09-10)
 FButton now uses a shared orange/copper renderer outside Adventure. Prompt
 buttons reuse it (secondary remains dark). 180ms ForgeAnimation press/release
