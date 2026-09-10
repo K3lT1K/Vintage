@@ -1,8 +1,8 @@
 diff --git a/HANDOFF.md b/HANDOFF.md
-index 95768df..6aab51a 100644
+index 95768df..cc09473 100644
 --- a/HANDOFF.md
 +++ b/HANDOFF.md
-@@ -147,3 +147,54 @@ Actions, но точный URL в контексте/сохранённом пр
+@@ -147,3 +147,57 @@ Actions, но точный URL в контексте/сохранённом пр
  GitHub tools. Попросить владельца создать Private repo с README через
  https://github.com/new?name=vintage-solo, предоставить доступ GitHub app и
  прислать URL. Это технически недоступная операция, не повторное согласование.
@@ -57,6 +57,9 @@ index 95768df..6aab51a 100644
 +phase captions, prevents post-pile cycling/fetching, includes all 84 Russian
 +card translations and extends opening-hand checks to black/blue Doomsday mana.
 +Local 20 assertions and 28 syntax parses pass. Runtime tests pending rerun.
++
++CI 34466615797 compiled AI; checkstyle caught unused test import. Removed.
++Trap test now moves cards into the actual stack zone before adding abilities.
 diff --git a/forge-ai/src/main/java/forge/ai/AiController.java b/forge-ai/src/main/java/forge/ai/AiController.java
 index 1b8e5c4..fba8fc3 100644
 --- a/forge-ai/src/main/java/forge/ai/AiController.java
@@ -424,14 +427,13 @@ index 1d9c0d6..79eaf8b 100644
          public final String plan;
 diff --git a/forge-gui-desktop/src/test/java/forge/game/mana/VintageCardsRegressionTest.java b/forge-gui-desktop/src/test/java/forge/game/mana/VintageCardsRegressionTest.java
 new file mode 100644
-index 0000000..6be6b06
+index 0000000..bf5a417
 --- /dev/null
 +++ b/forge-gui-desktop/src/test/java/forge/game/mana/VintageCardsRegressionTest.java
-@@ -0,0 +1,87 @@
+@@ -0,0 +1,88 @@
 +package forge.game.mana;
 +
 +import forge.ai.AITest;
-+import forge.ai.PlayerControllerAi;
 +import forge.ai.vintage.VintageCardRules;
 +import forge.deck.VintageSolo;
 +import forge.game.Game;
@@ -493,8 +495,10 @@ index 0000000..6be6b06
 +        Assert.assertFalse(VintageCardRules.choose(p, trap));
 +        SpellAbility recall = spell("Ancestral Recall", p.getWeakestOpponent());
 +        recall.getTargets().add(p.getWeakestOpponent());
++        recall.setHostCard(game.getAction().moveToStack(recall.getHostCard(), recall));
 +        game.getStack().add(recall);
 +        SpellAbility walk = spell("Time Walk", p.getWeakestOpponent());
++        walk.setHostCard(game.getAction().moveToStack(walk.getHostCard(), walk));
 +        game.getStack().add(walk);
 +        Assert.assertTrue(VintageCardRules.choose(p, trap));
 +        Assert.assertEquals(trap.getTargets().size(), 2);
